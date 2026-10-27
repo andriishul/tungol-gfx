@@ -9,10 +9,10 @@ A lightweight 3D rendering library built on Vulkan.
 ## Gallery
 
 **1. Big Scene**
-<video src="clips/BigScene.mp4" controls="controls" muted="muted" style="max-width: 100%;"></video>
+[Click here to watch the video](https://drive.google.com/file/d/1PmCZ5xz-tB8QsJdk8oqp5rZLEN8w1HVH/view?usp=sharing)
 
 **2. Small Scene**
-<video src="clips/SingleScene.mp4" controls="controls" muted="muted" style="max-width: 100%;"></video>
+[Click here to watch the video](https://drive.google.com/file/d/1JXDGa5iqi0TFMlAGANRtr3gkN80jbZ2-/view?usp=sharing)
 
 **3. 4 Viewports, same Scene**
 ![4 Viewports](clips/4-viewports-same-scene.gif)
