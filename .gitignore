@@ -4,7 +4,6 @@
 # CMake build directories (including your out/ folder from VS)
 build/
 out/
-bin/
 obj/
 lib/
 *.exe
