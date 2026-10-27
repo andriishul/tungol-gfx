@@ -17,22 +17,6 @@ lib/
 *.pdb
 *.ilk
 *.exp
-
-# ==========================================
-# CMake Specific
-# ==========================================
-CMakeCache.txt
-CMakeFiles/
-CMakeScripts/
-Testing/
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-Makefile
-*.cmake
-!CMakeLists.txt
-CMakeUserPresets.json
-
 # ==========================================
 # Visual Studio & IDEs
 # ==========================================
