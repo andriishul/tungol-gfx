@@ -1,0 +1,8 @@
+Model Information:
+* title:	Macabre Gargoyle Statue
+* source:	https://sketchfab.com/3d-models/macabre-gargoyle-statue-a3120d7783a44fd2b3d52392eda37ad4
+* author:	UMBRAVISIO (https://sketchfab.com/umbravisio)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

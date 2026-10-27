@@ -1,0 +1,8 @@
+Model Information:
+* title:	stone wall scan
+* source:	https://sketchfab.com/3d-models/stone-wall-scan-700dfd91b5aa40198bfdf6642fb91010
+* author:	JabRomich (https://sketchfab.com/JabRomich)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

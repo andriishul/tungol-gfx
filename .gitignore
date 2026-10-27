@@ -1,0 +1,62 @@
+# ==========================================
+# Build Artifacts & Executables
+# ==========================================
+# CMake build directories (including your out/ folder from VS)
+build/
+out/
+bin/
+obj/
+lib/
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.pdb
+*.ilk
+*.exp
+
+# ==========================================
+# CMake Specific
+# ==========================================
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+Makefile
+*.cmake
+!CMakeLists.txt
+CMakeUserPresets.json
+
+# ==========================================
+# Visual Studio & IDEs
+# ==========================================
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.user
+*.rsuser
+*.ncb
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+.idea/
+.vscode/
+
+# ==========================================
+# OS Generated Files
+# ==========================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

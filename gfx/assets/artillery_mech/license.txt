@@ -1,0 +1,8 @@
+Model Information:
+* title:	Pelter - Artillery Mech
+* source:	https://sketchfab.com/3d-models/pelter-artillery-mech-47e36fe71fd942a68eccfba2b2865f87
+* author:	Lagst (https://sketchfab.com/Lagst)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works

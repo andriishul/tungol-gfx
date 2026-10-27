@@ -1,0 +1,44 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+
+#include "constants.glsl"
+#include "bone_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer BoneMetaBuf { BoneMeta metas[]; };
+layout(std430, set = 0, binding = 6) readonly buffer LocalsBuf { mat4 locals[]; };
+layout(std430, set = 0, binding = 7) writeonly buffer PaletteBuf { mat4 palette[]; };
+layout(std430, set = 0, binding = 8) readonly buffer InverseBindBuf { mat4 inverseBinds[]; }; 
+
+layout(push_constant) uniform Push { uint totalBoneCount; uint instanceCount; } pc;
+
+const uint MAX_DEPTH = 128U; 
+
+void main()
+{
+    uint boneId = gl_GlobalInvocationID.x;
+    if (boneId >= pc.totalBoneCount) return;
+
+    BoneMeta meta = metas[boneId];
+
+    if (meta.instanceIndex >= pc.instanceCount) 
+    {
+        palette[boneId] = locals[boneId];  
+        return;
+    }
+
+    mat4 world = locals[boneId];
+    
+    uint parent = meta.parentIndex;
+    uint depth = 0;
+
+    while (parent != UINT32_MAX && parent < pc.totalBoneCount && depth < MAX_DEPTH)
+    {
+        world = locals[parent] * world;
+        parent = metas[parent].parentIndex;
+        depth++;
+    }
+
+    palette[boneId] = world * inverseBinds[boneId];
+}

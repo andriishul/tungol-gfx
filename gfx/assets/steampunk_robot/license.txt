@@ -1,0 +1,8 @@
+Model Information:
+* title:	Steampunk Robot
+* source:	https://sketchfab.com/3d-models/steampunk-robot-f22d82cc3ee3436786bf8a97277ea66c
+* author:	Lagst (https://sketchfab.com/Lagst)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works
