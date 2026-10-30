@@ -194,8 +194,12 @@ namespace tungol::runtime
         if (it == texturesLoaded.cend())
         {
             Texture tex = loadTexture(kernel.context().activeDevice(), kernel.allocator(), batch, path, fmt, ch, srgb);
-            batch.flush();
+            auto then = std::chrono::steady_clock::now();
 
+            batch.flush();
+            auto after = std::chrono::steady_clock::now();
+
+            std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(after - then);
             uint32_t idx = textures->add(std::move(tex));
 
             texturesLoaded[path] = idx;
@@ -313,6 +317,7 @@ namespace tungol::runtime
 
                 allMaterials.push_back(md);
             }
+           
 
             materialBase += static_cast<uint32_t>(model.materials.size());
 

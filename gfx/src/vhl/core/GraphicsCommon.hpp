@@ -136,8 +136,9 @@ namespace tungol::vhl
         DepthStencilRead = 1ULL << 8,
         DepthStencilWrite = 1ULL << 9,
         TransferRead = 1ULL << 10,
-        TransferWrite = 1ULL << 11
+        TransferWrite = 1ULL << 11,
     };
+
 
     enum class ImageLayout : uint32_t
     {
@@ -343,45 +344,45 @@ namespace tungol::vhl
 
     constexpr uint32_t RemainingMipLevels = UINT32_MAX;
     constexpr uint32_t RemainingArrayLayers = UINT32_MAX;
+    constexpr uint32_t BufferWholeSize = UINT32_MAX;
 
-    inline UsageIntent operator|(UsageIntent a, UsageIntent b)
+    constexpr inline UsageIntent operator|(UsageIntent a, UsageIntent b)
     {
         return static_cast<UsageIntent>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
     }
 
-    inline UsageIntent& operator|=(UsageIntent& a, UsageIntent b)
+    constexpr inline UsageIntent& operator|=(UsageIntent& a, UsageIntent b)
     {
         a = static_cast<UsageIntent>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
         return a;
     }
 
-
-    inline UsageIntent operator&(UsageIntent a, UsageIntent b)
+    constexpr inline UsageIntent operator&(UsageIntent a, UsageIntent b)
     {
         return static_cast<UsageIntent>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
     }
 
-    inline UsageIntent operator~(UsageIntent a) 
+    constexpr inline UsageIntent operator~(UsageIntent a)
     {
         return static_cast<UsageIntent>(~static_cast<uint32_t>(a));
     }
 
-    inline PipelineStageFlags operator|(PipelineStageFlags a, PipelineStageFlags b)
+    constexpr inline PipelineStageFlags operator|(PipelineStageFlags a, PipelineStageFlags b)
     {
         return static_cast<PipelineStageFlags>(static_cast<uint64_t>(a) | static_cast<uint64_t>(b));
     }
 
-    inline PipelineStageFlags operator&(PipelineStageFlags a, PipelineStageFlags b)
+    constexpr inline PipelineStageFlags operator&(PipelineStageFlags a, PipelineStageFlags b)
     {
         return static_cast<PipelineStageFlags>(static_cast<uint64_t>(a) & static_cast<uint64_t>(b));
     }
 
-    inline ImageAspectFlags operator&(ImageAspectFlags a1, ImageAspectFlags a2)
+    constexpr inline ImageAspectFlags operator&(ImageAspectFlags a1, ImageAspectFlags a2)
     {
         return static_cast<ImageAspectFlags>(static_cast<uint32_t>(a1) & static_cast<uint32_t>(a2));
     }
 
-    inline ImageAspectFlags operator|(ImageAspectFlags a1, ImageAspectFlags a2)
+    constexpr inline ImageAspectFlags operator|(ImageAspectFlags a1, ImageAspectFlags a2)
     {
         return static_cast<ImageAspectFlags>(static_cast<uint32_t>(a1) | static_cast<uint32_t>(a2));
     }
@@ -392,37 +393,37 @@ namespace tungol::vhl
         return (static_cast<uint32_t>(s1) & us2) == us2;
     }
 
-    inline ShaderStageFlags operator|(ShaderStageFlags f1, ShaderStageFlags f2)
+    constexpr inline ShaderStageFlags operator|(ShaderStageFlags f1, ShaderStageFlags f2)
     {
         return static_cast<ShaderStageFlags>(static_cast<uint32_t>(f1) | static_cast<uint32_t>(f2));
     }
 
-    inline ShaderStageFlags operator&(ShaderStageFlags f1, ShaderStageFlags f2)
+    constexpr inline ShaderStageFlags operator&(ShaderStageFlags f1, ShaderStageFlags f2)
     {
         return static_cast<ShaderStageFlags>(static_cast<uint32_t>(f1) & static_cast<uint32_t>(f2));
     }
 
-    inline AccessFlags operator&(AccessFlags a1, AccessFlags a2)
+    constexpr inline AccessFlags operator&(AccessFlags a1, AccessFlags a2)
     {
         return static_cast<AccessFlags>(static_cast<uint64_t>(a1) & static_cast<uint64_t>(a2));
     }
 
-    inline AccessFlags operator|(AccessFlags a1, AccessFlags a2)
+    constexpr inline AccessFlags operator|(AccessFlags a1, AccessFlags a2)
     {
         return static_cast<AccessFlags>(static_cast<uint64_t>(a1) | static_cast<uint64_t>(a2));
     }
 
-    inline QueueUsage operator&(QueueUsage u1, QueueUsage u2)
+    constexpr inline QueueUsage operator&(QueueUsage u1, QueueUsage u2)
     {
         return static_cast<QueueUsage>(static_cast<uint32_t>(u1) & static_cast<uint32_t>(u2));
     }
 
-    inline QueueUsage operator|(QueueUsage u1, QueueUsage u2)
+    constexpr inline QueueUsage operator|(QueueUsage u1, QueueUsage u2)
     {
         return static_cast<QueueUsage>(static_cast<uint32_t>(u1) | static_cast<uint32_t>(u2));
     }
 
-    inline QueueUsage toQueueUsage(const QueueFamilyDetails& details)
+    constexpr inline QueueUsage toQueueUsage(const QueueFamilyDetails& details)
     {
         QueueUsage usage = QueueUsage::None;
 
@@ -434,13 +435,15 @@ namespace tungol::vhl
         return usage;
     }
 
-    inline ImageUsageFlags operator|(ImageUsageFlags f1, ImageUsageFlags f2)
+    constexpr inline ImageUsageFlags operator|(ImageUsageFlags f1, ImageUsageFlags f2)
     {
         return static_cast<ImageUsageFlags>(static_cast<uint32_t>(f1) | static_cast<uint32_t>(f2));
     }
 
-    inline ImageUsageFlags operator&(ImageUsageFlags f1, ImageUsageFlags f2)
+    constexpr inline ImageUsageFlags operator&(ImageUsageFlags f1, ImageUsageFlags f2)
     {
         return static_cast<ImageUsageFlags>(static_cast<uint32_t>(f1) & static_cast<uint32_t>(f2));
     }
+
+    constexpr inline AccessFlags AccessWriteBit = AccessFlags::ShaderWrite | AccessFlags::DepthStencilWrite | AccessFlags::TransferWrite | AccessFlags::ColorAttachmentWrite;
 }

@@ -98,7 +98,15 @@ namespace tungol::vhl {
 				m_impl->bufferStates.erase(it);
 		};
 
-		m_impl->bufferStates[&buf] = state;
+		BufferState newState = state;
+
+		if (newState.ranges.empty())
+		{
+			newState.ranges.push_back(BufferRangeState{ AccessFlags::None, PipelineStageFlags::None, 0, buf.size() });
+		}
+
+		m_impl->bufferStates[&buf] = newState;
+		
 		return true;
 	}
 

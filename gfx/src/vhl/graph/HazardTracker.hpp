@@ -29,10 +29,18 @@ namespace tungol::vhl
 		}
 	};
 
-	struct BufferState 
+	struct BufferRangeState 
 	{
 		AccessFlags access = AccessFlags::None;
 		PipelineStageFlags stage = PipelineStageFlags::None;
+
+		uint64_t offset = 0;
+		uint64_t size = BufferWholeSize;
+	};
+
+	struct BufferState
+	{
+		std::vector<BufferRangeState> ranges;
 	};
 
 	class TUNGOL_EXPORT HazardTracker

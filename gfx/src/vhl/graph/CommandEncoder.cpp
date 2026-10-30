@@ -8,22 +8,28 @@
 
 namespace tungol::vhl 
 {
-	struct BarrierOp
+	struct ImageBarrierOp
 	{
 		SubresourceState source;
 		uint32_t baseMip, mipCount;
 		uint32_t baseLayer, layerCount;
 	};
+	
+	using BufferRangeBarrierOp = BufferRangeState;
 
 	static bool sameBarrierSource(const SubresourceState& a, const SubresourceState& b)
 	{
 		return a.access == b.access && a.layout == b.layout && a.stage == b.stage;
 	}
-	
 
-	static std::vector<BarrierOp> merge(const ImageState& state, uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount) 
+	static bool sameBarrierSource(const BufferRangeState& a, const BufferRangeState& b)
 	{
-		std::vector<BarrierOp> ops;
+		return a.access == b.access && a.stage == b.stage;
+	}
+
+	static std::vector<ImageBarrierOp> merge(const ImageState& state, uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount)
+	{
+		std::vector<ImageBarrierOp> ops;
 
 		for (uint32_t mip = baseMip; mip < baseMip + mipCount; ++mip)
 		{
@@ -61,6 +67,39 @@ namespace tungol::vhl
 		return ops;
 	}
 
+	static std::vector<BufferRangeBarrierOp> merge(const BufferState& state, uint64_t offset, uint64_t size) 
+	{
+		std::vector<BufferRangeBarrierOp> ops;
+
+		const uint64_t end = offset + size;
+
+		for (const auto& range : state.ranges)          
+		{
+			const uint64_t rEnd = range.offset + range.size;
+
+			if (rEnd <= offset) continue;         
+			if (range.offset >= end) continue;
+
+			BufferRangeBarrierOp clipped = range;
+			clipped.offset = std::max(range.offset, offset);
+			clipped.size = std::min(rEnd, end) - clipped.offset;
+
+			if (!ops.empty())
+			{
+				auto& last = ops.back();
+				if (last.offset + last.size == clipped.offset &&
+					last.access == clipped.access && last.stage == clipped.stage)
+				{
+					last.size += clipped.size;    
+					continue;
+				}
+			}
+			ops.push_back(clipped);
+		}
+
+		return ops;
+	}
+
 	struct SubresourceUsage 
 	{
 		UsageIntent intent = UsageIntent::None;
@@ -71,14 +110,21 @@ namespace tungol::vhl
 		uint32_t layerCount = RemainingArrayLayers;
 	};
 
+	struct BufferRangeUsage 
+	{
+		UsageIntent intent = UsageIntent::None;
+
+		uint64_t offset = 0;
+		uint64_t size = BufferWholeSize;
+	};
+
 	struct Pass
 	{
 		std::function<void(CommandRecorder&)> callback;
 		
 		std::unordered_map<Image*, std::vector<SubresourceUsage>> imageUsages;
-		std::unordered_map<Buffer*, UsageIntent> bufferUsages;
+		std::unordered_map<Buffer*, std::vector<BufferRangeUsage>> bufferUsages;
 	};
-
 
 	CommandEncoder::PassBuilder::PassBuilder(CommandEncoder* encoder, uint32_t index) :
 		m_encoder(encoder), m_index(index){}
@@ -110,6 +156,18 @@ namespace tungol::vhl
 		}
 	}
 	
+	static void commitRange(BufferState& state, const BufferTarget& t, uint64_t offset, uint64_t size)
+	{
+		for (auto& range : state.ranges) 
+		{
+			if (range.offset >= offset && range.offset + range.size <= offset + size)
+			{
+				range.access = t.access;
+				range.stage = t.stage;
+			}
+		}
+	}
+
 	static ImageTarget resolveImage(UsageIntent usage)
 	{
 		ImageTarget target{};
@@ -281,13 +339,16 @@ namespace tungol::vhl
 
 		void transitionPresent();
 		
-		void transitionSubresources(const CommandBuffer& cmd, Image& img, const std::vector<BarrierOp>& ops, 
+		void transitionSubresources(const CommandBuffer& cmd, Image& img, const std::vector<ImageBarrierOp>& ops, 
 			const ImageTarget& target, ImageState& state);
 
 		void transitionImage(const CommandBuffer& cmd, Image& img, const ImageTarget& target, ImageState& state, 
 			uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount);
 
-		void transitionBuffer(const CommandBuffer& cmd, Buffer& buffer, const BufferTarget& target, BufferState& state);
+		void transitionBufferRanges(const CommandBuffer& dstCmd, Buffer& buffer, const std::vector<BufferRangeBarrierOp>& ops,
+			const BufferTarget& target, BufferState& state);
+
+		void transitionBuffer(const CommandBuffer& dstCmd, Buffer& buffer, const BufferTarget& target, BufferState& state, uint64_t offset, uint64_t size);
 	};
 
 	
@@ -303,28 +364,41 @@ namespace tungol::vhl
 		transitionSubresources(dstCmd, img, ops, target, state);
 	}
 
-	void CommandEncoder::Impl::transitionBuffer(const CommandBuffer& dstCmd, Buffer& buffer, const BufferTarget& target, BufferState& state)
+	void CommandEncoder::Impl::transitionBufferRanges(const CommandBuffer& dstCmd, Buffer& buffer, 
+		const std::vector<BufferRangeBarrierOp>& ops, const BufferTarget& target, BufferState& state)
 	{
-			const bool same =
-				state.access == target.access &&
-				state.stage == target.stage;
+		for (auto& op : ops) 
+		{
+			const bool same = op.access == target.access && op.stage == target.stage 
+				&& ((target.access & AccessWriteBit) == AccessFlags::None);
 
 			if (!same)
 			{
 				BufferBarrierDesc desc
 				{
-					.srcStageMask = state.stage,
-					.srcAccessMask = state.access,
+					.srcStageMask = op.stage,
+					.srcAccessMask = op.access,
 					.dstStageMask = target.stage,
 					.dstAccessMask = target.access,
 					.buffer = &buffer,
+					.offset = op.offset,
+					.size = op.size,
 					.srcQueueFamily = QueueFamilyIgnored,
 					.dstQueueFamily = QueueFamilyIgnored
 				};
 				BarrierCommand::buffer(dstCmd, desc);
 			}
-			state.access = target.access;
-			state.stage = target.stage;
+		}
+	}
+
+	void CommandEncoder::Impl::transitionBuffer(const CommandBuffer& dstCmd, Buffer& buffer, const BufferTarget& target, BufferState& state, uint64_t offset, uint64_t size)
+	{
+		if (size == BufferWholeSize) size = buffer.size() - offset;
+		
+		auto ops = merge(state, offset, size);
+
+		transitionBufferRanges(dstCmd, buffer, ops, target, state);
+		commitRange(state, target, offset, size);
 	}
 
 
@@ -368,12 +442,12 @@ namespace tungol::vhl
 		s0.stage = presentTarget.stage;
 	}
 
-	void CommandEncoder::Impl::transitionSubresources(const CommandBuffer& dstCmd, Image& img, const std::vector<BarrierOp>& ops, const ImageTarget& target, ImageState& state)
+	void CommandEncoder::Impl::transitionSubresources(const CommandBuffer& dstCmd, Image& img, const std::vector<ImageBarrierOp>& ops, const ImageTarget& target, ImageState& state)
 	{
 		for (const auto& op : ops)
 		{
 			const bool same = op.source.access == target.access && op.source.stage == target.stage
-				&& op.source.layout == target.layout;
+				&& op.source.layout == target.layout && ((target.access & AccessWriteBit) == AccessFlags::None);
 
 			if (!same)
 			{
@@ -466,9 +540,20 @@ namespace tungol::vhl
 		return *this;
 	}
 
-	CommandEncoder::PassBuilder& CommandEncoder::PassBuilder::useBuffer(Buffer& buffer, UsageIntent usage)
+	CommandEncoder::PassBuilder& CommandEncoder::PassBuilder::useBuffer(Buffer& buffer, UsageIntent usage, uint64_t offset, uint64_t size)
 	{
-		m_encoder->m_impl->passes[m_index].bufferUsages[&buffer] |= usage;
+		if (size == BufferWholeSize) size = buffer.size();
+
+		auto& bufferRanges = m_encoder->m_impl->passes[m_index].bufferUsages[&buffer];
+
+		for (auto& r : bufferRanges)
+		{
+			if (r.offset == offset && r.size == size)
+				r.intent |= usage;
+		}
+
+		m_encoder->m_impl->passes[m_index].bufferUsages[&buffer].push_back(BufferRangeUsage{ usage, offset, size });
+
 		return *this;
 	}
 
@@ -478,11 +563,14 @@ namespace tungol::vhl
 		{
 			const auto& cmd = m_impl->queue.cmd();
 
-			for (auto& [buffer, intent] : pass.bufferUsages)
+			for (auto& [buffer, usages] : pass.bufferUsages)
 			{
-				auto target = resolveBuffer(intent);
 				auto& state = m_impl->stateRegistry.bufferState(*buffer);
-				m_impl->transitionBuffer(cmd, *buffer, target, state);
+
+				for (auto& u : usages)
+				{
+					m_impl->transitionBuffer(cmd, *buffer, resolveBuffer(u.intent), state, u.offset, u.size);
+				}
 			}
 
 			for (auto& [image, usages] : pass.imageUsages)

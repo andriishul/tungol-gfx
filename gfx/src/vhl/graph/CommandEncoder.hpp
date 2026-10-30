@@ -16,7 +16,7 @@ namespace tungol::vhl
 		{
 		public:
 			PassBuilder& useImage(Image& image, UsageIntent usage, uint32_t baseMip = 0, uint32_t mipCount = RemainingMipLevels,uint32_t baseLayer = 0, uint32_t layerCount = RemainingArrayLayers);
-			PassBuilder& useBuffer(Buffer& buffer, UsageIntent usage);
+			PassBuilder& useBuffer(Buffer& buffer, UsageIntent usage, uint64_t offset = 0, uint64_t size = BufferWholeSize);
 		private:
 			friend class CommandEncoder; 
 			PassBuilder(CommandEncoder* encoder, uint32_t index); 

@@ -21,8 +21,9 @@ namespace tungol::vhl
     static uint32_t getClassIndex(uint64_t size) 
     {
         if(size == 0) throw std::runtime_error("[getClassIndex] size cannot be zero!");
-        uint32_t idx = static_cast<uint32_t>(std::ceil(std::log2(size)));
-        return std::min(idx, NUM_CLASSES - 1);
+        unsigned long idx = 0;
+        _BitScanReverse(&idx, size);
+        return std::min<uint32_t>(idx, NUM_CLASSES - 1);
     }
 
     struct Block

@@ -19,13 +19,16 @@
 
 #include <sstream>
 #include <stdexcept>
-
+#include <chrono>
 namespace tungol::runtime
 {
 	Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path, vhl::Format format, int channels, bool srgb)
 	{
         int w, h, src;
+
+       
         stbi_uc* pixels = stbi_load(path.c_str(), &w, &h, &src, channels);
+       
         if (!pixels) throw std::runtime_error("[Texture loadTexture()] failed: " + path);
 
         uint32_t mipCount = 1;
@@ -49,7 +52,7 @@ namespace tungol::runtime
         std::vector<uint8_t> prev(pixels, pixels + w * h * channels);
         std::vector<uint8_t> next;
         uint32_t pw = w, ph = h;
-
+       
         stbir_pixel_layout layout = (channels == 4) ? STBIR_RGBA : (channels == 3) ? STBIR_RGB :
             (channels == 2) ? STBIR_2CHANNEL : STBIR_1CHANNEL;
 
@@ -76,6 +79,8 @@ namespace tungol::runtime
         auto sampler = std::make_unique<vhl::Sampler>(device);
 
         stbi_image_free(pixels);
+
+
         return Texture{ std::move(image), std::move(view), std::move(sampler)};
 	}
 

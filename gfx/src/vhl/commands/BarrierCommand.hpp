@@ -42,6 +42,9 @@ namespace tungol::vhl
 
 		Buffer* buffer = nullptr;
 
+		uint64_t offset = 0;
+		uint64_t size = BufferWholeSize;
+
 		QueueFamily srcQueueFamily = QueueFamilyIgnored;
 		QueueFamily dstQueueFamily = QueueFamilyIgnored;
 	};

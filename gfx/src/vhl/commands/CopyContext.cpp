@@ -93,7 +93,7 @@ namespace tungol::vhl
 
 		BarrierCommand::buffer(cmd, desc);
 
-		tracker.emplace(buf, BufferState{ desc.dstAccessMask, desc.dstStageMask });
+		tracker.emplace(buf, BufferState{ .ranges = { BufferRangeState{ desc.dstAccessMask, desc.dstStageMask } } });
 	}
 
 	void CopyContext::Impl::transitionToTransfer(const CommandBuffer& cmd, Image& img)
