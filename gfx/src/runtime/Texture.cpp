@@ -12,74 +12,43 @@
 #include <vhl/core/Descriptors.hpp>
 #include <vhl/commands/CopyContext.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <thirdparty/stb/stb_image.h>
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include <thirdparty/stb/stb_image_resize2.h>
+#include <asset/BcTextureReader.hpp>
 
 #include <sstream>
 #include <stdexcept>
 #include <chrono>
 namespace tungol::runtime
 {
-	Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path, vhl::Format format, int channels, bool srgb)
+	Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path)
 	{
-        int w, h, src;
-
-       
-        stbi_uc* pixels = stbi_load(path.c_str(), &w, &h, &src, channels);
-       
-        if (!pixels) throw std::runtime_error("[Texture loadTexture()] failed: " + path);
-
-        uint32_t mipCount = 1;
-        for (uint32_t s = std::max(w, h); s > 1; s >>= 1) mipCount++;
+        auto bcTexture = asset::load_bc_texture(path);
+               
+        const vhl::Format fmt = static_cast<vhl::Format>(bcTexture.header.format);
 
         vhl::ImageDesc imageDesc
         {
-            .format = format,
-            .width = static_cast<uint32_t>(w),
-            .height = static_cast<uint32_t>(h),
+            .format = fmt,
+            .width = bcTexture.header.width,
+            .height = bcTexture.header.height,
             
             .usage = vhl::ImageUsageFlags::Sampled | vhl::ImageUsageFlags::TransferDst,
 
-            .levelCount = mipCount
+            .levelCount = bcTexture.header.mipLevels
         };
 
         auto image = std::make_unique<vhl::Image>(device, allocator, imageDesc);
 
-        cpy.upload(*image, pixels, static_cast<uint64_t>(w * h * channels), 0);
+        cpy.upload(*image, bcTexture.mips[0].data(), bcTexture.mips[0].size(), 0);
 
-        std::vector<uint8_t> prev(pixels, pixels + w * h * channels);
-        std::vector<uint8_t> next;
-        uint32_t pw = w, ph = h;
-       
-        stbir_pixel_layout layout = (channels == 4) ? STBIR_RGBA : (channels == 3) ? STBIR_RGB :
-            (channels == 2) ? STBIR_2CHANNEL : STBIR_1CHANNEL;
-
-        for (uint32_t level = 1; level < mipCount; ++level)
+        for (uint32_t level = 1; level < bcTexture.mips.size(); ++level)
         {
-            uint32_t nw = std::max<uint32_t>(1, pw / 2);
-            uint32_t nh = std::max<uint32_t>(1, ph / 2);
-            next.resize(nw * nh * channels);
-
-            if (srgb) stbir_resize_uint8_srgb(prev.data(), pw, ph, 0, next.data(), nw, nh, 0, layout);
-            else stbir_resize_uint8_linear(prev.data(), pw, ph, 0, next.data(), nw, nh, 0, layout);
-
-
-            cpy.upload(*image, next.data(), next.size(), level);
-
-            prev.swap(next);
-            pw = nw;
-            ph = nh;
+            cpy.upload(*image, bcTexture.mips[level].data(), bcTexture.mips[level].size(), level);
         }
 
 
-        auto view = std::make_unique<vhl::ImageView>(device, *image, vhl::ImageViewDesc{ format });
+        auto view = std::make_unique<vhl::ImageView>(device, *image, vhl::ImageViewDesc{ fmt });
         
         auto sampler = std::make_unique<vhl::Sampler>(device);
-
-        stbi_image_free(pixels);
-
 
         return Texture{ std::move(image), std::move(view), std::move(sampler)};
 	}

@@ -16,10 +16,7 @@ namespace tungol::runtime
 	};
 
 
-	// Loads a texture from disk into GPU memory.
-	// NOTE: mipmaps generated on CPU.
-	// Set <channels> to 4 for RGBA (Albedo/Normal), 2 for RG (Metallic-Roughness), etc.
-	TUNGOL_EXPORT Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path, vhl::Format format, int channels, bool srgb);
+	TUNGOL_EXPORT Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path);
 
 	class TUNGOL_EXPORT TextureRegistry 
 	{

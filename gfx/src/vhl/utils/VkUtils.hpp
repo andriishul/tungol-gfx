@@ -480,6 +480,23 @@ namespace tungol::vhl::utils
             case Format::D32FloatS8Uint: return "D32FloatS8Uint";
             case Format::Rgba32Sint: return "Rgba32Sint";
             case Format::Rgba32Uint: return "Rgba32Uint";
+            
+            case Format::Bc1RgbUnorm: return "Bc1RgbUnorm";
+            case Format::Bc1RgbSrgb: return "Bc1RgbSrgb";
+            case Format::Bc1RgbaUnorm: return "Bc1RgbaUnorm";
+            case Format::Bc1RgbaSrgb: return "Bc1RgbaSrgb";
+            case Format::Bc2Unorm: return "Bc2Unorm";
+            case Format::Bc2Srgb: return "Bc2Srgb";
+            case Format::Bc3Unorm: return "Bc3Unorm";
+            case Format::Bc3Srgb: return "Bc3Srgb";
+            case Format::Bc4Unorm: return "Bc4Unorm";
+            case Format::Bc4Snorm: return "Bc4Snorm";
+            case Format::Bc5Unorm: return "Bc5Unorm";
+            case Format::Bc5Snorm: return "Bc5Snorm";
+            case Format::Bc6hUfloat: return "Bc6hUfloat";
+            case Format::Bc6hSfloat: return "Bc6hSfloat";
+            case Format::Bc7Unorm: return "Bc7Unorm";
+            case Format::Bc7Srgb: return "Bc7Srgb";
             default: throw std::runtime_error("[FormatToString] Unsupported Format!");
         }
     }
@@ -541,6 +558,23 @@ namespace tungol::vhl::utils
             case Format::D32Float: return VK_FORMAT_D32_SFLOAT;
             case Format::D32FloatS8Uint: return VK_FORMAT_D32_SFLOAT_S8_UINT;
 
+            case Format::Bc1RgbUnorm: return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+            case Format::Bc1RgbSrgb: return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+            case Format::Bc1RgbaUnorm: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+            case Format::Bc1RgbaSrgb: return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+            case Format::Bc2Unorm: return VK_FORMAT_BC2_UNORM_BLOCK;
+            case Format::Bc2Srgb: return VK_FORMAT_BC2_SRGB_BLOCK;
+            case Format::Bc3Unorm: return VK_FORMAT_BC3_UNORM_BLOCK;
+            case Format::Bc3Srgb: return VK_FORMAT_BC3_SRGB_BLOCK;
+            case Format::Bc4Unorm: return VK_FORMAT_BC4_UNORM_BLOCK;
+            case Format::Bc4Snorm: return VK_FORMAT_BC4_SNORM_BLOCK;
+            case Format::Bc5Unorm: return VK_FORMAT_BC5_UNORM_BLOCK;
+            case Format::Bc5Snorm: return VK_FORMAT_BC5_SNORM_BLOCK;
+            case Format::Bc6hUfloat: return VK_FORMAT_BC6H_UFLOAT_BLOCK;
+            case Format::Bc6hSfloat: return VK_FORMAT_BC6H_SFLOAT_BLOCK;
+            case Format::Bc7Unorm: return VK_FORMAT_BC7_UNORM_BLOCK;
+            case Format::Bc7Srgb: return VK_FORMAT_BC7_SRGB_BLOCK;
+
             default: throw std::runtime_error("[toVkFormat] Unsupported format!");
         }
     }
@@ -549,42 +583,58 @@ namespace tungol::vhl::utils
     {
         switch (vk_format)
         {
-        case VK_FORMAT_UNDEFINED:                       return Format::Undefined;
-        case VK_FORMAT_R8_UNORM:                        return Format::R8Unorm;
-        case VK_FORMAT_R8_SNORM:                        return Format::R8Snorm;
-        case VK_FORMAT_R8_UINT:                         return Format::R8Uint;
-        case VK_FORMAT_R8_SINT:                         return Format::R8Sint;
-        case VK_FORMAT_R8G8_UNORM:                      return Format::Rg8Unorm;
-        case VK_FORMAT_R8G8_SNORM:                      return Format::Rg8Snorm;
-        case VK_FORMAT_R8G8_UINT:                       return Format::Rg8Uint;
-        case VK_FORMAT_R8G8_SINT:                       return Format::Rg8Sint;
-        case VK_FORMAT_R8G8B8_UNORM:                    return Format::Rgb8Unorm;
-        case VK_FORMAT_R8G8B8_SRGB:                     return Format::Rgb8Srgb;
-        case VK_FORMAT_R8G8B8A8_UNORM:                  return Format::Rgba8Unorm;
-        case VK_FORMAT_R8G8B8A8_SRGB:                   return Format::Rgba8Srgb;
-        case VK_FORMAT_B8G8R8A8_UNORM:                  return Format::Bgra8Unorm;
-        case VK_FORMAT_B8G8R8A8_SRGB:                   return Format::Bgra8Srgb;
-        case VK_FORMAT_R16_UINT:                        return Format::R16Uint;
-        case VK_FORMAT_R16_SINT:                        return Format::R16Sint;
-        case VK_FORMAT_R16_SFLOAT:                      return Format::R16Float;
-        case VK_FORMAT_R16G16_SFLOAT:                   return Format::Rg16Float;
-        case VK_FORMAT_R16G16B16A16_SFLOAT:             return Format::Rgba16Float;
-        case VK_FORMAT_R32_UINT:                        return Format::R32Uint;
-        case VK_FORMAT_R32_SINT:                        return Format::R32Sint;
-        case VK_FORMAT_R32_SFLOAT:                      return Format::R32Float;
-        case VK_FORMAT_R32G32_SFLOAT:                   return Format::Rg32Float;
-        case VK_FORMAT_R32G32B32_SFLOAT:                return Format::Rgb32Float;
-        case VK_FORMAT_R32G32B32A32_SFLOAT:             return Format::Rgba32Float;
-        case VK_FORMAT_A2R10G10B10_UNORM_PACK32:        return Format::Rgb10A2Unorm;
-        case VK_FORMAT_B10G11R11_UFLOAT_PACK32:         return Format::Rg11B10Float;
-        case VK_FORMAT_D16_UNORM:                       return Format::D16Unorm;
-        case VK_FORMAT_D24_UNORM_S8_UINT:               return Format::D24UnormS8Uint;
-        case VK_FORMAT_D32_SFLOAT:                      return Format::D32Float;
-        case VK_FORMAT_D32_SFLOAT_S8_UINT:              return Format::D32FloatS8Uint;
-        case VK_FORMAT_R32G32B32A32_SINT :              return Format::Rgba32Sint;
-        case VK_FORMAT_R32G32B32A32_UINT :              return Format::Rgba32Uint;
-        default:
-            throw std::runtime_error("[toFormat] Unsupported VkFormat!");
+            case VK_FORMAT_UNDEFINED: return Format::Undefined;
+            case VK_FORMAT_R8_UNORM: return Format::R8Unorm;
+            case VK_FORMAT_R8_SNORM: return Format::R8Snorm;
+            case VK_FORMAT_R8_UINT: return Format::R8Uint;
+            case VK_FORMAT_R8_SINT: return Format::R8Sint;
+            case VK_FORMAT_R8G8_UNORM: return Format::Rg8Unorm;
+            case VK_FORMAT_R8G8_SNORM: return Format::Rg8Snorm;
+            case VK_FORMAT_R8G8_UINT: return Format::Rg8Uint;
+            case VK_FORMAT_R8G8_SINT: return Format::Rg8Sint;
+            case VK_FORMAT_R8G8B8_UNORM: return Format::Rgb8Unorm;
+            case VK_FORMAT_R8G8B8_SRGB: return Format::Rgb8Srgb;
+            case VK_FORMAT_R8G8B8A8_UNORM: return Format::Rgba8Unorm;
+            case VK_FORMAT_R8G8B8A8_SRGB: return Format::Rgba8Srgb;
+            case VK_FORMAT_B8G8R8A8_UNORM: return Format::Bgra8Unorm;
+            case VK_FORMAT_B8G8R8A8_SRGB: return Format::Bgra8Srgb;
+            case VK_FORMAT_R16_UINT: return Format::R16Uint;
+            case VK_FORMAT_R16_SINT: return Format::R16Sint;
+            case VK_FORMAT_R16_SFLOAT: return Format::R16Float;
+            case VK_FORMAT_R16G16_SFLOAT: return Format::Rg16Float;
+            case VK_FORMAT_R16G16B16A16_SFLOAT: return Format::Rgba16Float;
+            case VK_FORMAT_R32_UINT: return Format::R32Uint;
+            case VK_FORMAT_R32_SINT: return Format::R32Sint;
+            case VK_FORMAT_R32_SFLOAT: return Format::R32Float;
+            case VK_FORMAT_R32G32_SFLOAT: return Format::Rg32Float;
+            case VK_FORMAT_R32G32B32_SFLOAT: return Format::Rgb32Float;
+            case VK_FORMAT_R32G32B32A32_SFLOAT: return Format::Rgba32Float;
+            case VK_FORMAT_A2R10G10B10_UNORM_PACK32: return Format::Rgb10A2Unorm;
+            case VK_FORMAT_B10G11R11_UFLOAT_PACK32: return Format::Rg11B10Float;
+            case VK_FORMAT_D16_UNORM: return Format::D16Unorm;
+            case VK_FORMAT_D24_UNORM_S8_UINT: return Format::D24UnormS8Uint;
+            case VK_FORMAT_D32_SFLOAT: return Format::D32Float;
+            case VK_FORMAT_D32_SFLOAT_S8_UINT: return Format::D32FloatS8Uint;
+            case VK_FORMAT_R32G32B32A32_SINT : return Format::Rgba32Sint;
+            case VK_FORMAT_R32G32B32A32_UINT : return Format::Rgba32Uint;
+
+            case VK_FORMAT_BC1_RGB_UNORM_BLOCK: return Format::Bc1RgbUnorm;
+            case VK_FORMAT_BC1_RGB_SRGB_BLOCK: return Format::Bc1RgbSrgb;
+            case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: return Format::Bc1RgbaUnorm;
+            case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: return Format::Bc1RgbaSrgb;
+            case VK_FORMAT_BC2_UNORM_BLOCK: return Format::Bc2Unorm;
+            case VK_FORMAT_BC2_SRGB_BLOCK: return Format::Bc2Srgb;
+            case VK_FORMAT_BC3_UNORM_BLOCK: return Format::Bc3Unorm;
+            case VK_FORMAT_BC3_SRGB_BLOCK: return Format::Bc3Srgb;
+            case VK_FORMAT_BC4_UNORM_BLOCK: return Format::Bc4Unorm;
+            case VK_FORMAT_BC4_SNORM_BLOCK: return Format::Bc4Snorm;
+            case VK_FORMAT_BC5_UNORM_BLOCK: return Format::Bc5Unorm;
+            case VK_FORMAT_BC5_SNORM_BLOCK: return Format::Bc5Snorm;
+            case VK_FORMAT_BC6H_UFLOAT_BLOCK: return Format::Bc6hUfloat;
+            case VK_FORMAT_BC6H_SFLOAT_BLOCK: return Format::Bc6hSfloat;
+            case VK_FORMAT_BC7_UNORM_BLOCK: return Format::Bc7Unorm;
+            case VK_FORMAT_BC7_SRGB_BLOCK: return Format::Bc7Srgb;
+            default: throw std::runtime_error("[toFormat] Unsupported VkFormat!");
         }
     }
 

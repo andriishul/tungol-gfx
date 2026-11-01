@@ -3,6 +3,7 @@
 
 #include <math/types.hpp>
 
+#include <fstream>
 #include <string>
 #include <vector>
 

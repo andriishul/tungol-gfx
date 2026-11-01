@@ -196,9 +196,9 @@ namespace tungol::vhl
 
 			uint64_t stagingOffset = stageCopy(base, bytes, pI.srcOffset, pI.size, baseOffset);
 
-			const uint32_t w = std::max(1u, pI.resource->width() >> pI.mipLevel);
-			const uint32_t h = std::max(1u, pI.resource->height() >> pI.mipLevel);
-			const uint32_t d = std::max(1u, pI.resource->depth() >> pI.mipLevel);
+			const uint32_t w = std::max(1U, pI.resource->width() >> pI.mipLevel);
+			const uint32_t h = std::max(1U, pI.resource->height() >> pI.mipLevel);
+			const uint32_t d = std::max(1U, pI.resource->depth() >> pI.mipLevel);
 
 			recoder.copyTo(staging, *pI.resource, stagingOffset, w, h, d, 0, 0, 0, pI.mipLevel, pI.arrayLayer, 1);
 		}
@@ -207,7 +207,7 @@ namespace tungol::vhl
 
 		Fence fence(device);
 		fence.reset();
-		SubmitInfo submit{ 1, &cmd, };
+		SubmitInfo submit{ 1, &cmd };
 		submit.fence = &fence;
 
 		auto& nativeQueue = queue.native();
@@ -239,7 +239,7 @@ namespace tungol::vhl
 
 	CopyContext& CopyContext::upload(Image& img, const void* pData, uint64_t size, uint32_t mipLevel, uint32_t arrayLayer)
 	{
-		m_impl->upload(img, pData, size, mipLevel,arrayLayer);
+		m_impl->upload(img, pData, size, mipLevel, arrayLayer);
 		return *this;
 	}
 

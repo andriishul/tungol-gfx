@@ -40,7 +40,6 @@ namespace tungol::vhl {
 			.layerCount = desc.layerCount == RemainingArrayLayers ? VK_REMAINING_ARRAY_LAYERS : desc.layerCount
 		};
 
-
 		VkImageViewCreateInfo viewInfo
 		{
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,

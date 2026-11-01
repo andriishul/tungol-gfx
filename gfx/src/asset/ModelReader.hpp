@@ -1,7 +1,6 @@
 #pragma once
 #include "ModelFormat.hpp"
 
-#include <fstream>
 #include <algorithm>
 
 namespace tungol::asset 

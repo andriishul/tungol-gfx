@@ -257,7 +257,16 @@ namespace tungol::vhl
         D16Unorm,
         D24UnormS8Uint,
         D32Float,
-        D32FloatS8Uint
+        D32FloatS8Uint,
+
+        // Block compressed
+        Bc1RgbUnorm, Bc1RgbSrgb, Bc1RgbaUnorm, Bc1RgbaSrgb,
+        Bc2Unorm, Bc2Srgb,
+        Bc3Unorm, Bc3Srgb,
+        Bc4Unorm, Bc4Snorm,
+        Bc5Unorm, Bc5Snorm,
+        Bc6hUfloat, Bc6hSfloat,
+        Bc7Unorm, Bc7Srgb
     };
 
     enum class PrimitiveTopology

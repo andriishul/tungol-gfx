@@ -41,6 +41,18 @@ namespace tungol::vhl
 	struct BufferState
 	{
 		std::vector<BufferRangeState> ranges;
+
+		BufferRangeState& emplaceRange(uint64_t offset, uint64_t size)
+		{
+			std::erase_if(ranges, [=](const BufferRangeState& r)
+			{
+				return r.offset < offset + size && offset < r.offset + r.size;
+			});
+
+			ranges.push_back(BufferRangeState{ AccessFlags::None, PipelineStageFlags::None, offset, size });
+
+			return ranges.back();
+		}
 	};
 
 	class TUNGOL_EXPORT HazardTracker

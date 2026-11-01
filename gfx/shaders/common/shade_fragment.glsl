@@ -39,19 +39,27 @@ vec4 shade_fragment(vec3 N_geom, vec2 uv, vec3 worldPos, vec3 T, vec3 B, uint ma
     MaterialData mat = materials[matIdx == UINT32_MAX ? 0 : matIdx];
     vec4 albedo = albedo_texture(mat, uv) * mat.baseColor;
 
-    mat3 TBN = mat3(normalize(T), normalize(B), normalize(N_geom));
-    vec3 nrmSample = normal_texture(mat, uv).xyz * 2.0 - 1.0;
+    mat3 TBN = mat3(normalize(T), normalize(B), normalize(N_geom));    
+    vec3 nrmSample = normalize(normal_texture(mat, uv).xyz * 2.0 - 1.0);
+    
     vec3 N = normalize(TBN * nrmSample);
 
-    vec3 V = normalize(camPos - worldPos);
     vec3 L = normalize(-light.direction);
+
+    vec3 V = normalize(camPos - worldPos);
+
     vec3 H = normalize(V + L);
 
-    float NdotL = max(dot(N, L), 0.0);
-    float NdotV = max(dot(N, V), 0.0);
+    float ndv = dot(N, V);
+    if (ndv < 0.001)
+        N = normalize(N + V * (0.001 - ndv)); 
+
+    float NdotL = max(dot(N, L), 1e-4);
+    float NdotV = max(dot(N, V), 1e-4);
 
     vec4 mrSample = mr_texture(mat, uv);
     float metallic = clamp(mrSample.b * mat.metallic, 0.0, 1.0);
+    
     float roughness = clamp(mrSample.g * mat.roughness, 0.04, 1.0);
 
     vec3 F0 = mix(vec3(0.04), albedo.rgb, metallic);

@@ -146,7 +146,7 @@ namespace tungol::runtime
         std::unique_ptr<AnimationResources> animationResources;
         std::unique_ptr<ShadowResources> shadowResources;
 
-        uint32_t registerTexture(vhl::CopyContext& cpy, vhl::Format fmt, const std::string& path, int ch, bool srgb);
+        uint32_t registerTexture(vhl::CopyContext& cpy, const std::string& path);
 
         void commit(const core::Scene& scene);
 
@@ -188,18 +188,18 @@ namespace tungol::runtime
         skinnedDrawCount = 0;
     }
 
-    uint32_t RenderScene::Impl::registerTexture(vhl::CopyContext& batch, vhl::Format fmt, const std::string& path, int ch, bool srgb)
+    uint32_t RenderScene::Impl::registerTexture(vhl::CopyContext& batch, const std::string& path)
     {
         auto it = texturesLoaded.find(path);
         if (it == texturesLoaded.cend())
         {
-            Texture tex = loadTexture(kernel.context().activeDevice(), kernel.allocator(), batch, path, fmt, ch, srgb);
+            Texture tex = loadTexture(kernel.context().activeDevice(), kernel.allocator(), batch, path);
             auto then = std::chrono::steady_clock::now();
 
             batch.flush();
-            auto after = std::chrono::steady_clock::now();
+            //auto after = std::chrono::steady_clock::now();
 
-            std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(after - then);
+            //std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(after - then);
             uint32_t idx = textures->add(std::move(tex));
 
             texturesLoaded[path] = idx;
@@ -307,13 +307,13 @@ namespace tungol::runtime
                 md.albedoIdx = md.normalIdx = md.mrIdx = md.emissiveIdx = UINT32_MAX;
 
                 if (mat.albedoPath[0] != 0 && std::filesystem::exists(entry.path + mat.albedoPath))
-                    md.albedoIdx = registerTexture(cpyContext, vhl::Format::Rgba8Srgb, entry.path + mat.albedoPath, 4, true);
+                    md.albedoIdx = registerTexture(cpyContext, entry.path + mat.albedoPath);
                 if (mat.normalPath[0] != 0 && std::filesystem::exists(entry.path + mat.normalPath))
-                    md.normalIdx = registerTexture(cpyContext, vhl::Format::Rgba8Unorm, entry.path + mat.normalPath, 4, false);
+                    md.normalIdx = registerTexture(cpyContext,  entry.path + mat.normalPath);
                 if (mat.mrPath[0] != 0 && std::filesystem::exists(entry.path + mat.mrPath))
-                    md.mrIdx = registerTexture(cpyContext, vhl::Format::Rg8Unorm, entry.path + mat.mrPath, 2, false);
+                    md.mrIdx = registerTexture(cpyContext, entry.path + mat.mrPath);
                 if (mat.emissivePath[0] != 0 && std::filesystem::exists(entry.path + mat.emissivePath))
-                    md.emissiveIdx = registerTexture(cpyContext, vhl::Format::Rgba8Srgb, entry.path + mat.emissivePath, 4, true);
+                    md.emissiveIdx = registerTexture(cpyContext, entry.path + mat.emissivePath);
 
                 allMaterials.push_back(md);
             }
