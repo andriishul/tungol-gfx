@@ -3,6 +3,8 @@
 #include <vhl/core/images/Image.hpp>
 #include <vhl/core/buffers/Buffer.hpp>
 
+#include <algorithm>
+
 namespace tungol::vhl 
 {
 	struct SubresourceState
@@ -42,16 +44,53 @@ namespace tungol::vhl
 	{
 		std::vector<BufferRangeState> ranges;
 
-		BufferRangeState& emplaceRange(uint64_t offset, uint64_t size)
+		void emplaceRange(
+			uint64_t offset, uint64_t size, 
+			AccessFlags access = AccessFlags::None, 
+			PipelineStageFlags stage = PipelineStageFlags::None)
 		{
-			std::erase_if(ranges, [=](const BufferRangeState& r)
+			const uint64_t end = offset + size;
+			std::vector<BufferRangeState> next;
+			next.reserve(ranges.size() + 2);
+
+			for (const auto& r : ranges)
 			{
-				return r.offset < offset + size && offset < r.offset + r.size;
+				const uint64_t rEnd = r.offset + r.size;
+
+				if (rEnd <= offset) { next.push_back(r); continue; }     
+				if (r.offset >= end) { next.push_back(r); continue; }   
+
+				if (r.offset < offset)
+				{                                 
+					next.push_back(BufferRangeState{ r.access, r.stage, r.offset, offset - r.offset });
+				}
+
+				if (rEnd > end)
+				{                                         
+					next.push_back(BufferRangeState{ r.access, r.stage, end, rEnd - end });
+				}
+			}
+
+			next.push_back({ access, stage, offset, size });
+
+			std::sort(next.begin(), next.end(), [](const BufferRangeState& a, const BufferRangeState& b)
+			{ 
+				return a.offset < b.offset; 
 			});
 
-			ranges.push_back(BufferRangeState{ AccessFlags::None, PipelineStageFlags::None, offset, size });
+			for (size_t i = 1; i < next.size(); )
+			{
+				auto& a = next[i - 1];
+				auto& b = next[i];
+				if (a.offset + a.size == b.offset && a.access == b.access && a.stage == b.stage)
+				{
+					a.size += b.size;
+					next.erase(next.begin() + i);
+				}
+				else ++i;
+			}
 
-			return ranges.back();
+			ranges = std::move(next);
 		}
 	};
 

@@ -156,18 +156,6 @@ namespace tungol::vhl
 		}
 	}
 	
-	static void commitRange(BufferState& state, const BufferTarget& t, uint64_t offset, uint64_t size)
-	{
-		for (auto& range : state.ranges) 
-		{
-			if (range.offset >= offset && range.offset + range.size <= offset + size)
-			{
-				range.access = t.access;
-				range.stage = t.stage;
-			}
-		}
-	}
-
 	static ImageTarget resolveImage(UsageIntent usage)
 	{
 		ImageTarget target{};
@@ -398,7 +386,7 @@ namespace tungol::vhl
 		auto ops = merge(state, offset, size);
 
 		transitionBufferRanges(dstCmd, buffer, ops, target, state);
-		commitRange(state, target, offset, size);
+		state.emplaceRange(offset, size, target.access, target.stage);
 	}
 
 
@@ -530,7 +518,7 @@ namespace tungol::vhl
 			if (e.baseMip == baseMip && e.mipCount == mipCount &&
 				e.baseLayer == baseLayer && e.layerCount == layerCount)
 			{
-				e.intent = e.intent | usage;
+				e.intent |= usage;
 				return *this;
 			}
 		}
@@ -549,7 +537,10 @@ namespace tungol::vhl
 		for (auto& r : bufferRanges)
 		{
 			if (r.offset == offset && r.size == size)
+			{
 				r.intent |= usage;
+				return *this;
+			}
 		}
 
 		m_encoder->m_impl->passes[m_index].bufferUsages[&buffer].push_back(BufferRangeUsage{ usage, offset, size });

@@ -35,6 +35,9 @@ set(CORE_SRCS
 )
 
 set(RUNTIME_SRCS
+    
+    gfx/src/runtime/GeometryPool.cpp
+    
     gfx/src/runtime/AnimationResources.cpp
     gfx/src/runtime/ShadowResources.cpp
     gfx/src/runtime/RenderKernel.cpp

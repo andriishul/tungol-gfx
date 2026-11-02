@@ -38,11 +38,9 @@ void main()
 
     Animation anim = anims[p.clipIndex];
 
-    // Bound 4: animation sanity
     if (anim.channelCount == 0u) { locals[boneId] = bindPoses[boneId]; return; }
     if (anim.channelCount > MAX_CHANNELS_PER_CLIP) { locals[boneId] = bindPoses[boneId]; return; }
 
-    // Bounded search: hard cap at MAX_CHANNELS_PER_CLIP, never unbounded
     int chanIdx = -1;
     uint searchCount = min(anim.channelCount, MAX_CHANNELS_PER_CLIP);
     for (uint i = 0u; i < searchCount; ++i)
@@ -58,14 +56,12 @@ void main()
 
     AnimChannel ch = chans[chanIdx];
 
-    // Bound 5: channel sanity
     if (ch.keyCount == 0u) { locals[boneId] = bindPoses[boneId]; return; }
     if (ch.keyCount > MAX_KEYS_PER_CHANNEL) { locals[boneId] = bindPoses[boneId]; return; }
 
     uint first = ch.keyIndex;
     uint last  = ch.keyIndex + ch.keyCount - 1u;
 
-    // Single key
     if (ch.keyCount == 1u)
     {
         Keyframe k = keys[first];
@@ -81,15 +77,13 @@ void main()
         return;
     }
 
-    // After last key
     if (p.time >= keys[last].time)
     {
         Keyframe k = keys[last];
-        locals[boneId] = composeTRS(k.position, k.rotation, k.scale);
+        local//s[boneId] = composeTRS(k.position, k.rotation, k.scale);
         return;
     }
 
-    // Bounded bracket search — capped at MAX_KEYS_PER_CHANNEL
     uint scanCount = min(ch.keyCount - 1u, MAX_KEYS_PER_CHANNEL - 1u);
     for (uint i = 0u; i < scanCount; ++i)
     {
@@ -113,6 +107,6 @@ void main()
         }
     }
 
-    // Fallback if nothing matched (shouldn't happen, but safe)
+    // Fallback if nothing matched (shouldn't happen, but safe) !!!!!!
     locals[boneId] = bindPoses[boneId];
 }

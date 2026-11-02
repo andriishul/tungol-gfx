@@ -21,8 +21,14 @@ namespace tungol::vhl
     static uint32_t getClassIndex(uint64_t size) 
     {
         if(size == 0) throw std::runtime_error("[getClassIndex] size cannot be zero!");
+        
         unsigned long idx = 0;
-        _BitScanReverse(&idx, size);
+#ifdef _WIN64
+        _BitScanReverse64(&idx, size);
+#else
+        idx = static_cast<unsigned long>(std::floor(std::log2(static_cast<double>(size))));
+#endif
+        
         return std::min<uint32_t>(idx, NUM_CLASSES - 1);
     }
 
