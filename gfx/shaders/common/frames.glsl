@@ -1,18 +1,18 @@
 #ifndef TUNGOL_COMMON_FRAMES_GLSL
 #define TUNGOL_COMMON_FRAMES_GLSL
 
-struct LightData
-{
-    vec3 direction;
-    float intensity;
-    vec3 color;
-};
-
 struct CameraData
 {
     mat4 projection;
     mat4 view;
     vec3 position;
+};
+
+struct LightData
+{
+    vec3 direction;
+    float intensity;
+    vec3 color;
 };
 
 struct ShadowData
@@ -21,13 +21,13 @@ struct ShadowData
     float bias;
 };
 
-struct FrameData
+struct ViewData
 {
     CameraData camera;
-    LightData light;
+    LightData  light;
     ShadowData shadow;
 };
 
-layout(std140, set = 0, binding = 0) uniform FrameUBO { FrameData frame; };
+layout(std140, set = 0, binding = 0) uniform ViewUBO { ViewData viewData; };
 
 #endif

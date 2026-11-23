@@ -3,9 +3,40 @@
 
 namespace tungol::vhl 
 {
+    struct MemoryHeapInfo 
+    { 
+        uint64_t size = 0; 
+        bool deviceLocal = false; 
+    };
+
+    struct MemoryTypeInfo
+    {
+        uint32_t heapIndex = 0; 
+        uint32_t flags = 0;
+    };
+
+    class TUNGOL_EXPORT MemoryTopology 
+    {
+    public:
+        MemoryTopology(const Device& device);
+        ~MemoryTopology();
+
+        // Returns UIN32_MAX if not FOUND
+        uint32_t pickTypeIndex(MemoryType type, uint32_t typeBits) const;
+        
+        uint64_t heapSize(uint32_t typeIndex) const;
+        uint64_t heapSize(MemoryType type) const;
+
+        const std::vector<MemoryHeapInfo>& heaps() const;
+        const std::vector<MemoryTypeInfo>& types() const;
+    private:
+        struct Impl;
+        std::unique_ptr<Impl> m_impl;
+    };
+
+
     constexpr uint64_t BUFFER_SLAB_SIZE = 128 * 1024 * 1024; // 128 MB
     constexpr uint64_t IMAGE_SLAB_SIZE = 256 * 1024 * 1024; // 256 MB
-
 
     struct MemoryBlock
     {
@@ -14,14 +45,6 @@ namespace tungol::vhl
         uint64_t offset = 0;
         uint64_t size = 0;
 
-        void* pMappedData = nullptr;
-    };
-
-
-    template<typename THandle>
-    struct MappedResource
-    {
-        THandle handle{};
         void* pMappedData = nullptr;
     };
 
@@ -41,6 +64,8 @@ namespace tungol::vhl
         void free(ImageHandle handle);
 
         void shrink();
+
+        const MemoryTopology& topology() const;
 
         static std::unique_ptr<SegregatedAllocator> create(const Device& device, uint64_t bufferSlabSize = BUFFER_SLAB_SIZE, uint64_t imageSlabSize = IMAGE_SLAB_SIZE);
     private:
@@ -73,6 +98,13 @@ namespace tungol::vhl
         SampleCount samples = SampleCount::One;
         uint32_t levelCount = 1;
         uint32_t layerCount = 1;
+    };
+
+    template<typename THandle>
+    struct MappedResource
+    {
+        THandle handle{};
+        void* pMappedData = nullptr;
     };
 
     namespace image 

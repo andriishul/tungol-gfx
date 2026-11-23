@@ -2,20 +2,19 @@
 
 A lightweight 3D rendering library built on Vulkan.
 
-**Graphics API:** Vulkan 1.3+
-**Dependencies:** GLFW, STB
-**Supports:** one PCF shadow map per scene, compute skinning, simple single-light PBR
+| | |
+| :--- | :--- |
+| **Graphics API** | `Vulkan 1.3+` |
+| **Dependencies** | `GLFW` |
+| **Supports** | `PCF shadow Map` · `Compute Skinning` · `simple single-light PBR` |
 
 ## Gallery
 
-**1. Big Scene**
-[Click here to watch the video](https://drive.google.com/file/d/1PmCZ5xz-tB8QsJdk8oqp5rZLEN8w1HVH/view?usp=sharing)
+**1. Small Scene**
+![Small Scene 1](clips/scene1.gif)
 
-**2. Small Scene**
-[Click here to watch the video](https://drive.google.com/file/d/1JXDGa5iqi0TFMlAGANRtr3gkN80jbZ2-/view?usp=sharing)
-
-**3. 4 Viewports, same Scene**
-![4 Viewports](clips/4-viewports-same-scene.gif)
+**2. Big Scene**
+![Big Scene 2](clips/scene2.gif)
 
 Code examples are in the `examples/` folder.
 

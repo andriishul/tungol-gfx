@@ -22,48 +22,41 @@ layout(location = 6) out vec3 vCameraPosition;
 layout(location = 7) out LightData vLight;
 layout(location = 10) out ShadowData vShadow;
 
-
-layout(std430, set = 3, binding = 7) readonly buffer BonePalette
-{
+layout(std430, set = 3, binding = 7) readonly buffer BonePalette {
     mat4 palette[];
 };
 
-
 void main()
 {
-    InstanceData instance = instances[gl_InstanceIndex];
-
+    Instance instance = instances[gl_InstanceIndex];
     uint boneBase = instance.boneOffset;
-   
-    mat4 skin = aBoneWeights.x * palette[boneBase + uint(aBoneIndices.x)]
-        + aBoneWeights.y * palette[boneBase + uint(aBoneIndices.y)]
-        + aBoneWeights.z * palette[boneBase + uint(aBoneIndices.z)]
-        + aBoneWeights.w * palette[boneBase + uint(aBoneIndices.w)];
+
+    mat4 skin =
+        aBoneWeights.x * palette[boneBase + uint(aBoneIndices.x)] +
+        aBoneWeights.y * palette[boneBase + uint(aBoneIndices.y)] +
+        aBoneWeights.z * palette[boneBase + uint(aBoneIndices.z)] +
+        aBoneWeights.w * palette[boneBase + uint(aBoneIndices.w)];
 
     vec4 localPos = skin * vec4(aPos, 1.0);
     vec3 localNrm = mat3(skin) * aNormal;
     vec3 localTan = mat3(skin) * aTangent.xyz;
+    vec4 world = instance.worldTransform * localPos;
 
-    vec4 world = instance.model * localPos;
-
-    gl_Position = frame.camera.projection * frame.camera.view * world;
+    gl_Position = viewData.camera.projection * viewData.camera.view * world;
 
     vWorldPos = world.xyz;
     vUV = aUV;
 
-    vec3 N = mat3(instance.model) * localNrm;
-    vec3 T = mat3(instance.model) * localTan;
+    vec3 N = mat3(instance.worldTransform) * localNrm;
+    vec3 T = mat3(instance.worldTransform) * localTan;
     vec3 B = cross(N, T) * aTangent.w;
 
     vNormal = N;
     vTangent = T;
     vBitangent = B;
     vMaterialIndex = instance.materialIndex;
-    
-    vLight = frame.light;
-    vShadow = frame.shadow;
-    vCameraPosition = frame.camera.position;
+
+    vLight = viewData.light;
+    vShadow = viewData.shadow;
+    vCameraPosition = viewData.camera.position;
 }
-
-
-

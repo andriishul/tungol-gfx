@@ -14,14 +14,12 @@ layout(std430, set = 0, binding = 4) readonly buffer KeyframeBuf { Keyframe keys
 layout(std430, set = 0, binding = 5) readonly buffer BindPoseBuf { mat4 bindPoses[]; };
 layout(std430, set = 0, binding = 6) writeonly buffer LocalsBuf { mat4 locals[]; };
 
-layout(push_constant) uniform Push { uint totalBoneCount; uint instanceCount; } pc;
+layout(push_constant) uniform SkinningParams { uint totalThreads; uint playbackCount; } pc;
 
 const uint MAX_CHANNELS_PER_CLIP = 512U;    
 const uint MAX_KEYS_PER_CHANNEL = 4096U; 
 
-
-vec4 nlerp(vec4 a, vec4 b, float t)
-{
+vec4 nlerp(vec4 a, vec4 b, float t) {
     float d = dot(a, b);
     if (d < 0.0) b = -b;
     vec4 r = mix(a, b, t);
@@ -30,8 +28,7 @@ vec4 nlerp(vec4 a, vec4 b, float t)
     return r / len;
 }
 
-mat4 composeTRS(vec3 pos, vec4 rot, vec3 scale)
-{
+mat4 composeTRS(vec3 pos, vec4 rot, vec3 scale) {
     float x = rot.x, y = rot.y, z = rot.z, w = rot.w;
     float x2 = x + x, y2 = y + y, z2 = z + z;
     float xx = x * x2, xy = x * y2, xz = x * z2;
@@ -48,74 +45,67 @@ mat4 composeTRS(vec3 pos, vec4 rot, vec3 scale)
 
 void main()
 {
-    uint boneId = gl_GlobalInvocationID.x;
-    if (boneId >= pc.totalBoneCount) return;
+    uint threadId = gl_GlobalInvocationID.x;
+    if (threadId >= pc.totalThreads) return;
 
-    BoneMeta meta = metas[boneId];
-
-    if (meta.instanceIndex >= pc.instanceCount) {
-        locals[boneId] = bindPoses[boneId];
-        return;
-    }
-
-    PlaybackState p = pbs[meta.instanceIndex];
-
-    if (p.boneCount == 0) 
+    int instId = -1;
+    uint localBone = 0;
+    for (uint i = 0; i < pc.playbackCount; ++i) 
     {
-        locals[boneId] = bindPoses[boneId];
+        if (threadId >= pbs[i].boneOffset && threadId < pbs[i].boneOffset + pbs[i].boneCount) 
+        {
+            instId = int(i);
+            localBone = threadId - pbs[i].boneOffset;
+            break;
+        }
+    }
+
+    if (instId < 0) 
+    {
+        locals[threadId] = mat4(1.0);
         return;
     }
+
+    PlaybackState p = pbs[instId];
+    uint metaId = p.boneMetaOffset + localBone;
+    BoneMeta meta = metas[metaId];
 
     if (p.clipIndex == UINT32_MAX) 
     {
-        locals[boneId] = bindPoses[boneId];
+        locals[threadId] = bindPoses[meta.bindPoseIndex]; 
         return;
     }
 
     Animation anim = anims[p.clipIndex];
-
-    if (anim.channelCount == 0) 
+    if (anim.channelCount == 0 || anim.channelCount > MAX_CHANNELS_PER_CLIP) 
     {
-        locals[boneId] = bindPoses[boneId];
-        return;
-    }
-
-
-    if (anim.channelCount > MAX_CHANNELS_PER_CLIP) 
-    {
-        locals[boneId] = bindPoses[boneId];
+        locals[threadId] = bindPoses[meta.bindPoseIndex]; 
         return;
     }
 
     int chanIdx = -1;
     uint searchCount = min(anim.channelCount, MAX_CHANNELS_PER_CLIP);
    
-    for (uint i = 0; i < searchCount; ++i)
+    for (uint i = 0; i < searchCount; ++i) 
     {
         uint c = anim.channelIndex + i;
-        if (chans[c].boneIndex == meta.localBoneIndex)
-        {
+        if (chans[c].boneIndex == meta.localBoneIndex) {
             chanIdx = int(c);
             break;
         }
     }
+    
     if (chanIdx < 0) 
     {
-        locals[boneId] = bindPoses[boneId];
+        locals[threadId] = bindPoses[meta.bindPoseIndex]; 
         return;
     }
 
     AnimChannel ch = chans[chanIdx];
 
-    if (ch.keyCount == 0) 
+    if (ch.keyCount == 0 || ch.keyCount > MAX_KEYS_PER_CHANNEL) 
     {
-        locals[boneId] = bindPoses[boneId];
-        return;
-    }
-
-    if (ch.keyCount > MAX_KEYS_PER_CHANNEL) 
-    {
-        locals[boneId] = bindPoses[boneId];
+        locals[threadId] = bindPoses[meta.bindPoseIndex]; 
         return;
     }
 
@@ -125,7 +115,7 @@ void main()
     if (ch.keyCount == 1) 
     {
         Keyframe k = keys[first];
-        locals[boneId] = composeTRS(k.position, k.rotation, k.scale);
+        locals[threadId] = composeTRS(k.position, k.rotation, k.scale);
         return;
     }
 
@@ -135,24 +125,24 @@ void main()
     if (t <= keys[first].time) 
     {
         Keyframe k = keys[first];
-        locals[boneId] = composeTRS(k.position, k.rotation, k.scale);
+        locals[threadId] = composeTRS(k.position, k.rotation, k.scale);
         return;
     }
 
     if (t >= keys[last].time) 
     {
         Keyframe k = keys[last];
-        locals[boneId] = composeTRS(k.position, k.rotation, k.scale);
+        locals[threadId] = composeTRS(k.position, k.rotation, k.scale);
         return;
     }
 
     uint scanCount = min(ch.keyCount - 1, MAX_KEYS_PER_CHANNEL - 1);
-    for (uint i = 0; i < scanCount; ++i)
+    for (uint i = 0; i < scanCount; ++i) 
     {
         uint k0 = ch.keyIndex + i;
         uint k1 = k0 + 1;
 
-        if (t < keys[k1].time)
+        if (t < keys[k1].time) 
         {
             Keyframe a = keys[k0];
             Keyframe b = keys[k1];
@@ -164,10 +154,10 @@ void main()
             vec4 rot = nlerp(a.rotation, b.rotation, alpha);
             vec3 scl = mix(a.scale, b.scale, alpha);
 
-            locals[boneId] = composeTRS(pos, rot, scl);
+            locals[threadId] = composeTRS(pos, rot, scl);
             return;
         }
     }
 
-    locals[boneId] = bindPoses[boneId];
+    locals[threadId] = bindPoses[meta.bindPoseIndex]; 
 }

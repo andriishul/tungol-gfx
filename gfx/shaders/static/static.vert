@@ -21,16 +21,17 @@ layout(location = 10) out ShadowData vShadow;
 
 void main()
 {
-    InstanceData instance = instances[gl_InstanceIndex];
+    Instance instance = instances[gl_InstanceIndex];
 
-    gl_Position = frame.camera.projection * frame.camera.view * instance.model * vec4(aPos, 1.0);
+    gl_Position = viewData.camera.projection * viewData.camera.view * instance.worldTransform * vec4(aPos, 1.0);
     
-    vec4 world = instance.model * vec4(aPos, 1.0);
+    vec4 world = instance.worldTransform * vec4(aPos, 1.0);
+
     vWorldPos = world.xyz;
     vUV = aUV;
 
-    vec3 N = mat3(instance.model) * aNormal;
-    vec3 T = mat3(instance.model) * aTangent.xyz;
+    vec3 N = mat3(instance.worldTransform) * aNormal;
+    vec3 T = mat3(instance.worldTransform) * aTangent.xyz;
     vec3 B = cross(N, T) * aTangent.w;
 
     vNormal = N;
@@ -39,7 +40,7 @@ void main()
 
     vMaterialIndex = instance.materialIndex;
     
-    vLight = frame.light;
-    vShadow = frame.shadow;
-    vCameraPosition = frame.camera.position;
+    vLight = viewData.light;
+    vShadow = viewData.shadow;
+    vCameraPosition = viewData.camera.position;
 }

@@ -18,7 +18,6 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    outColor = shade_fragment(vNormal, vUV, vWorldPos, 
-                              vTangent, vBitangent, vMaterialIndex,
-                              vLight, vShadow, vCameraPosition);
+    outColor = shade_fragment(vNormal, vUV, vWorldPos, vTangent, vBitangent, vMaterialIndex, vLight, vShadow, vCameraPosition);
+    // shade_fragment(vNormal, vUV, vWorldPos, vTangent, vBitangent, vMaterialIndex, vLight, vShadow, vCameraPosition);
 }

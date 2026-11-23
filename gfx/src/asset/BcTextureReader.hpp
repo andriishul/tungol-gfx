@@ -17,15 +17,17 @@ namespace tungol::asset
 	inline BcTexture load_bc_texture(const std::string& file)
 	{
 		std::ifstream fs(file, std::ios::binary);
-		if (!fs) throw std::runtime_error("[load_texture] Failed to open: " + file);
+		if (!fs) 
+			throw std::runtime_error("[load_bc_texture] Failed to open: " + file);
 
 		BcTexture tex{};
 		fs.read(reinterpret_cast<char*>(&tex.header), sizeof tex.header);
-		if (!fs) throw std::runtime_error("[load_texture] File too small: " + file);
+		if (!fs) 
+			throw std::runtime_error("[load_bc_texture] File too small: " + file);
 
 
 		if (!tex.header.blockBytes || tex.header.mipLevels == 0 || tex.header.magic != BC_MAGIC)
-			throw std::runtime_error("[load_texture] Bc texture format not recognized: " + file);
+			throw std::runtime_error("[load_bc_texture] Bc texture format not recognized: " + file);
 
 		tex.mips.resize(tex.header.mipLevels);
 

@@ -59,6 +59,7 @@ namespace tungol::vhl
         uint32_t memoryTypeIndex;
     };
 
+    class MemoryTopology;
 
     class Enumerator
     {
@@ -109,11 +110,9 @@ namespace tungol::vhl
 
         class MemoryFilter
         {
-        private:
-            static VkPhysicalDeviceMemoryProperties get_physical_device_properties(const VkPhysicalDevice& physical);
         public:
-            static MemoryRequirements get_image_requirements(const VkDevice& logical, const VkPhysicalDevice& physical, const VkImage& image, MemoryType required);
-            static MemoryRequirements get_buffer_requirements(const VkDevice& logical, const VkPhysicalDevice& physical, const VkBuffer& buffer, MemoryType required);
+            static MemoryRequirements get_image_requirements(const VkDevice& logical, const MemoryTopology& topo, const VkImage& image, MemoryType required);
+            static MemoryRequirements get_buffer_requirements(const VkDevice& logical, const MemoryTopology& topo, const VkBuffer& buffer, MemoryType required);
         };
     };
 

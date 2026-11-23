@@ -44,11 +44,6 @@ namespace tungol::vhl
 		std::unique_ptr<Impl> m_impl;
 	};
 
-	class Buffer;
-	class Image; 
-	class ImageView;
-	class Sampler;
-
 	class TUNGOL_EXPORT DescriptorWriter
 	{
 	public:

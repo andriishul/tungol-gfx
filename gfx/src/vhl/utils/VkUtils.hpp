@@ -127,11 +127,11 @@ namespace tungol::vhl::utils
     {
         switch (type)
         {
-            case BufferType::Vertex:   return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            case BufferType::Index:    return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-            case BufferType::Uniform:  return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-            case BufferType::Storage:  return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-            case BufferType::Staging:  return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+            case BufferType::Vertex: return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            case BufferType::Index: return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+            case BufferType::Uniform: return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            case BufferType::Storage: return VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            case BufferType::Staging: return VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
             case BufferType::Indirect: return VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
             case BufferType::Readback: return VK_BUFFER_USAGE_TRANSFER_DST_BIT;
             default:

@@ -1,7 +1,6 @@
 #ifndef TUNGOL_COMMON_PBR_GLSL
 #define TUNGOL_COMMON_PBR_GLSL
 
-
 #include "constants.glsl"
 
 float distributionGGX(vec3 N, vec3 H, float roughness)

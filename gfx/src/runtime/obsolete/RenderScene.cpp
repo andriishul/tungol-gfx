@@ -38,20 +38,7 @@ namespace tungol::runtime
 
     namespace
     {
-        struct ModelBase
-        {
-            uint32_t staticBase = 0;
-            uint32_t skinnedBase = 0;
-            uint32_t indexBase = 0;
-            uint32_t materialBase = 0;
-        };
-
-        struct alignas(16) InstanceData
-        {
-            math::mat4 modelMatrix;
-            uint32_t materialIndex = UINT32_MAX;
-            uint32_t boneOffset = UINT32_MAX;
-        };
+     
 
         struct alignas(16) MaterialData
         {
@@ -131,14 +118,16 @@ namespace tungol::runtime
         vhl::DescriptorSetHandle objectSets[RenderKernel::FramesInFlight];
         std::unique_ptr<vhl::StorageBuffer> instanceSBs[RenderKernel::FramesInFlight];
         std::unique_ptr<vhl::StagingBuffer> instanceTBs[RenderKernel::FramesInFlight];
+        std::unique_ptr<vhl::IndirectBuffer> indirectBufs[RenderKernel::FramesInFlight];
+        std::unique_ptr<vhl::StagingBuffer> indirectTBs[RenderKernel::FramesInFlight];
+
 
         std::unique_ptr<vhl::StorageBuffer> materialSB;
 
-        std::unique_ptr<vhl::IndirectBuffer> indirectBuf;
 
         std::vector<ModelBase> modelBases;
 
-        std::vector<InstanceData> instancesData;
+        std::vector<ShaderInstance> instancesData;
 
         std::unordered_map<std::string, uint32_t> texturesLoaded;
         std::unique_ptr<TextureRegistry> textures;
@@ -152,7 +141,7 @@ namespace tungol::runtime
 
         uint8_t* build(const core::Scene& scene);
 
-        void fillInstances(const core::Scene& scene, std::vector<InstanceData>& out) const;
+        void fillInstances(const core::Scene& scene, std::vector<ShaderInstance>& out) const;
         void fillIndirectCommands(const core::Scene& scene, std::vector<vhl::DrawIndexedIndirectCommand>& outStatic, std::vector<vhl::DrawIndexedIndirectCommand>& outSkinned) const;
     };
 
@@ -180,10 +169,12 @@ namespace tungol::runtime
 
             instanceTBs[i].reset();
             instanceSBs[i].reset();
+            indirectTBs[i].reset();
+            indirectBufs[i].reset();
+
         }
 
         materialSB.reset();
-        indirectBuf.reset();
         staticDrawCount = 0;
         skinnedDrawCount = 0;
     }
@@ -214,19 +205,19 @@ namespace tungol::runtime
         auto& allocator = kernel.allocator();
         auto& descriptorPool = kernel.descriptorPool();
         auto& layouts = kernel.layouts();
-        auto& scheduler = kernel.mainQueue();
+        auto& direct = kernel.directQueue();
         auto& tracker = kernel.tracker();
      
-        textures = std::make_unique<TextureRegistry>(device, descriptorPool, layouts, main::k_MaxBindlessTexturesPerScene);
+        textures = std::make_unique<TextureRegistry>(kernel, main::k_MaxBindlessTexturesPerScene);
 
    
-        vhl::CopyContext cpyContext(device, allocator, kernel.mainQueue(), kernel.tracker());
+        vhl::CopyContext cpyContext(device, allocator, direct, kernel.tracker());
 
         const auto& entries = models.all();
 
         if (entries.empty()) throw std::runtime_error("[RenderScene::commit] Cannot commit: ModelRegistry is empty. Did you load any models?");
 
-        modelBases.resize(entries.size());
+        modelBases = buildModelBases(models);
         computeSceneBounds(scene, models, sceneMin, sceneMax);
 
         uint64_t totalStatic = 0, totalSkinned = 0, totalIndices = 0, totalMaterials = sizeof(MaterialData);
@@ -274,8 +265,6 @@ namespace tungol::runtime
         {
             const auto& entry = entries[id];
             const auto& model = entry.model;
-
-            modelBases[id] = ModelBase{ staticBase, skinnedBase, indexBase, materialBase };
 
             if (!model.staticVertices.empty())
             {
@@ -339,7 +328,7 @@ namespace tungol::runtime
         for (const auto& inst : instances)
             totalMeshInstances += static_cast<uint32_t>(models.model(inst.modelID).meshes.size());
 
-        std::vector<InstanceData> instancesData;
+        std::vector<ShaderInstance> instancesData;
         instancesData.reserve(totalMeshInstances);
         fillInstances(scene, instancesData);
 
@@ -348,7 +337,20 @@ namespace tungol::runtime
         skinnedArgs.reserve(totalMeshInstances);
         fillIndirectCommands(scene, staticArgs, skinnedArgs);
 
-        const uint64_t instanceBytes = std::max<uint64_t>(instancesData.size() * sizeof(InstanceData), sizeof(InstanceData));
+        const uint64_t instanceBytes = std::max<uint64_t>(instancesData.size() * sizeof(ShaderInstance), sizeof(ShaderInstance));
+
+
+
+        std::vector<vhl::DrawIndexedIndirectCommand> args;
+        args.reserve(staticArgs.size() + skinnedArgs.size());
+        args.insert(args.end(), staticArgs.begin(), staticArgs.end());
+        args.insert(args.end(), skinnedArgs.begin(), skinnedArgs.end());
+
+        staticDrawCount = static_cast<uint32_t>(staticArgs.size());
+        skinnedDrawCount = static_cast<uint32_t>(skinnedArgs.size());
+
+        const uint64_t indirectBytes = std::max<uint64_t>(args.size() * sizeof(vhl::DrawIndexedIndirectCommand), sizeof(vhl::DrawIndexedIndirectCommand));
+
 
         for (uint32_t i = 0; i < RenderKernel::FramesInFlight; ++i)
         {
@@ -363,32 +365,28 @@ namespace tungol::runtime
             }
             else tracker.emplace(*instanceSBs[i]);
 
+            indirectBufs[i] = std::make_unique<vhl::IndirectBuffer>(device, allocator, indirectBytes);
+            indirectTBs[i] = std::make_unique<vhl::StagingBuffer>(device, allocator, indirectBytes);
+            tracker.emplace(*indirectTBs[i]);
+
+            if (!args.empty())
+            {
+                cpyContext.upload(*indirectBufs[i], args.data(), args.size() * sizeof(vhl::DrawIndexedIndirectCommand));
+            }
+            else
+            {
+                tracker.emplace(*indirectBufs[i]);
+            }
+
+
             vhl::DescriptorWriter writer(objectSets[i]);
             writer.storageBuffer(*instanceSBs[i], 0, 0, instanceSBs[i]->size())
                 .storageBuffer(*materialSB, 1, 0, materialSB->size())
                 .apply(device);
         }
 
-        std::vector<vhl::DrawIndexedIndirectCommand> args;
-        args.reserve(staticArgs.size() + skinnedArgs.size());
-        args.insert(args.end(), staticArgs.begin(), staticArgs.end());
-        args.insert(args.end(), skinnedArgs.begin(), skinnedArgs.end());
-
-        staticDrawCount = static_cast<uint32_t>(staticArgs.size());
-        skinnedDrawCount = static_cast<uint32_t>(skinnedArgs.size());
-
-        const uint64_t indirectBytes = std::max<uint64_t>(args.size() * sizeof(vhl::DrawIndexedIndirectCommand), sizeof(vhl::DrawIndexedIndirectCommand));
-
-        indirectBuf = std::make_unique<vhl::IndirectBuffer>(device, allocator, indirectBytes);
-
-        if (!args.empty())
-        {
-            cpyContext.upload(*indirectBuf, args.data(), args.size() * sizeof(vhl::DrawIndexedIndirectCommand));
-        }
-        else 
-        {
-            tracker.emplace(*indirectBuf);
-        }
+       
+       
 
         cpyContext.flush();
     }
@@ -404,7 +402,7 @@ namespace tungol::runtime
     }
    
 
-    void RenderScene::Impl::fillInstances(const core::Scene& scene, std::vector<InstanceData>& out) const
+    void RenderScene::Impl::fillInstances(const core::Scene& scene, std::vector<ShaderInstance>& out) const
     {
         out.clear();
         const auto& instances = scene.instances();
@@ -418,7 +416,7 @@ namespace tungol::runtime
 
             for (const auto& mesh : model.meshes)
             {
-                InstanceData id{};
+                ShaderInstance id{};
                 id.modelMatrix = inst.transform;
                 id.materialIndex = model.materials.empty() ? UINT32_MAX : mesh.materialIndex + base.materialBase;
                 id.boneOffset = mesh.hasSkin ? boneOffset : UINT32_MAX;
@@ -504,10 +502,18 @@ namespace tungol::runtime
         return m_impl->objectSets[slot];
     }
 
-    vhl::Buffer& RenderScene::indirectBuf() const
+    vhl::Buffer& RenderScene::indirectTBs(uint32_t slot) const
     {
-        if (!m_impl->indirectBuf) throw std::runtime_error("[RenderScene::indirectBuf] Not initialized. Did you commit the scene before using it?");
-        return *m_impl->indirectBuf;
+        if (slot >= RenderKernel::FramesInFlight) throw std::out_of_range("[RenderScene::indirectTBs] slot out of range (" + std::to_string(slot) + " >= " + std::to_string(RenderKernel::FramesInFlight) + ")");
+        if (!m_impl->indirectTBs[slot]) throw std::runtime_error("[RenderScene::indirectTBs] slot " + std::to_string(slot) + " not committed");
+        return *m_impl->indirectTBs[slot];
+    }
+
+    vhl::Buffer& RenderScene::indirectBufs(uint32_t slot) const
+    {
+        if (slot >= RenderKernel::FramesInFlight) throw std::out_of_range("[RenderScene::indirectBufs] slot out of range (" + std::to_string(slot) + " >= " + std::to_string(RenderKernel::FramesInFlight) + ")");
+        if (!m_impl->indirectBufs[slot]) throw std::runtime_error("[RenderScene::indirectBufs] slot " + std::to_string(slot) + " not committed");
+        return *m_impl->indirectBufs[slot];
     }
 
     vhl::Buffer& RenderScene::materialSB() const
@@ -549,7 +555,12 @@ namespace tungol::runtime
         return m_impl->animationResources->buildPlayback(scene, m_impl->models);
     }
 
-    const AnimationResources& RenderScene::animations() const
+    const std::vector<ModelBase>& RenderScene::modelBases() const
+    {
+        return m_impl->modelBases;
+    }
+
+    AnimationResources& RenderScene::animations()
     {
         if (!m_impl->animationResources) throw std::runtime_error("[RenderScene::animations] Not initialized. Did you commit the scene before using it?");
         return *m_impl->animationResources;

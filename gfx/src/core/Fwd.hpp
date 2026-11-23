@@ -7,6 +7,9 @@ namespace tungol
     namespace vhl
     {
         struct AcquireResult;
+        struct DrawIndirectCommand;
+        struct DrawIndexedIndirectCommand;
+
         enum class Format : uint32_t;
         enum class PipelineType : uint32_t;
 
@@ -45,12 +48,22 @@ namespace tungol
 
     namespace core
     {
-        class ModelRegistry;
+        //class ModelRegistry;
+        class AssetCache;
     }
 
     namespace runtime
     {
         struct RenderKernel;
+        class ResidencyManager;
+
+        class ShadowMap;
+        class TextureList;
+        
+        class DrawHeap;
+        class MaterialHeap;
+        class GeometryHeap;
+        class AnimationHeap;
     }
 
 }

@@ -1,32 +1,26 @@
 #pragma once
 #include <core/TungolExport.hpp>
 #include <core/Fwd.hpp>
+
+#include <runtime/ResidencyManager.hpp>
 #include <window/WindowBase.hpp>
+
 
 namespace tungol::runtime
 {
 	struct TUNGOL_EXPORT RenderKernel
 	{
 	public:
-		RenderKernel(WindowBase& window);
+		static constexpr uint32_t FramesInFlight = 4U;
+
+		RenderKernel(WindowBase& window, core::AssetCache& assets);
 		~RenderKernel();
-	private:
-		static constexpr uint32_t FramesInFlight = 4;
 
-		friend class Renderer;
-		friend class RenderScene;
-		friend class AnimationResources;
-		friend class ShadowResources;
-
-		vhl::DescriptorPool& descriptorPool() const;
-		vhl::DescriptorSetLayoutList& layouts() const;
-		vhl::SegregatedAllocator& allocator() const;
-		vhl::HazardTracker& tracker() const;
-		vhl::CommandQueue& mainQueue() const;
-		vhl::GraphicsContext& context() const;
-
+		core::AssetCache& assets() const;
+		
 		WindowBase& window() const;
 	private:
+		friend struct KernelInternal;
 		struct Impl;
 		std::unique_ptr<Impl> m_impl;
 	};

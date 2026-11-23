@@ -55,8 +55,7 @@ hazards and simplifies memory placement.
 2. **Inactive slabs** - If no active slab has space, an inactive slab of the
    matching type is reactivated and reused.
 3. **New slab** - Only created when no existing slab can satisfy the request.
-   The slab size is `max(configuredSlabSize, size + alignment - 1)`, aligned
-   up to `DEFAULT_SLAB_ALIGNMENT`.
+   The slab size is `max(min(configuredSlabSize, heapSize / 4), size + alignment - 1)`
 
 
 ### Threading
@@ -82,11 +81,11 @@ externally synchronize access(mutexes, etc).
 
 **Bindless Textures**
 
-Textures are accessed through a per-scene bindless descriptor array, indexed per-material from the shader. No per-draw descriptor rebinding.
+Textures are accessed globally bindless descriptor array, indexed per-material from the shader. No per-draw descriptor rebinding.
 
-Capacity is MaxTexturesPerScene per scene (currently 4096), validated at startup against the device's per-stage sampled-image limit. The descriptor pool is sized for MaxScenes * (MaxTexturesPerScene + 1) to cover all scenes plus one shadow map each.
+Capacity is k_MaxTextures per scene (currently 4096), validated at startup against the device's per-stage sampled-image limit. 
 
-Slots are allocated monotonically; textures are not unloaded at runtime and are freed only when the whole RenderScene is destroyed.
+The descriptor pool is sized for k_MaxTextures + 1 to cover all textures plus one shadow map.
 
 # Error policy
 
@@ -107,12 +106,4 @@ A multi-queue design (graphics + transfer + compute) was prototyped with timelin
 
 Complete the `EventBus` implementation for the remaining event types, arguments, etc.
 
-[3] Rethink the bindless texture approach to allow uploading and unloading textures independently.
-
-[2] Rethink the rendering model: the core idea stays the same, but the scope becomes global instead of per-scene, targeting streaming.
-
-# Current limitation
-
-Asset loading is currently fully synchronous: `stb_image` decodes textures and `stb_resize` generates mips on the CPU, followed by a blocking `fence.wait()` in the `CopyContext`. This causes a noticeable stall during scene initialization. 
-
-[1] The plan is to rethink asset loading to minimize stalling and reduce extraction complexity, potentially by moving decoding to a background thread and batching GPU uploads.
+[1] More advanced PBR, a better asset pipeline, more advanced lighting, ...

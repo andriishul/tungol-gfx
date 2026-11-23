@@ -17,11 +17,9 @@ layout(std430, set = 2, binding = 7) readonly buffer BonePalette
     mat4 palette[];
 };
 
-
 void main()
 {
-    InstanceData instance = instances[gl_InstanceIndex];
-
+    Instance instance = instances[gl_InstanceIndex];
     uint boneBase = instance.boneOffset;
 
     mat4 skin =
@@ -31,10 +29,8 @@ void main()
         aBoneWeights.w * palette[boneBase + uint(aBoneIndices.w)];
 
     vec4 localPos = skin * vec4(aPos, 1.0);
-    vec4 world    = instance.model * localPos;
 
-    gl_Position = frame.shadow.viewProj * world;
+    vec4 world = instance.worldTransform * localPos;
+
+    gl_Position = viewData.shadow.viewProj * world;
 }
-
-
-

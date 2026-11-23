@@ -103,8 +103,8 @@ namespace tungol::vhl
 
 			.buffer = vkBuffer,
 
-			.offset = 0,
-			.size = VK_WHOLE_SIZE
+			.offset = desc.offset,
+			.size = desc.size == BufferWholeSize ? VK_WHOLE_SIZE : desc.size
 		};
 
 

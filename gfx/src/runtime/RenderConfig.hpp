@@ -8,10 +8,16 @@ namespace tungol
     {
         inline constexpr vhl::SampleCount k_MsaaSampleCount = vhl::SampleCount::Four;
         inline constexpr vhl::Format k_ShadowMapFormat = vhl::Format::D32Float;
-        inline constexpr uint32_t k_ShadowMapResolution = 2048U;
+        inline constexpr uint32_t k_ShadowMapResolution = 1408U;
 
-        inline constexpr uint32_t k_MaxScenes = 4;
-        inline constexpr uint32_t k_MaxBindlessTexturesPerScene = 4096U;
+        inline constexpr uint32_t k_MaxInstances = 2048U;
+        inline constexpr uint32_t k_MaxMeshesPerInstance = 32U;
+
+        inline constexpr uint32_t k_MaxSkinnedInstances = 256U;
+        inline constexpr uint32_t k_MaxBonesPerInstance = 512U;
+
+        inline constexpr uint32_t k_MaxTextures = 4096U;
+        inline constexpr uint32_t k_MaxPlaybackCount = k_MaxSkinnedInstances;   // one playback per skinned instance max
     }
 
     namespace shaders

@@ -8,6 +8,16 @@
 
 namespace tungol::runtime
 {
+	struct TextureDesc 
+	{
+		vhl::Format fmt;
+
+		uint32_t width = 1;
+		uint32_t height = 1;
+
+		uint32_t mipLevels = 1;
+	};
+
 	struct Texture 
 	{
 		std::unique_ptr<vhl::Image> image;
@@ -16,19 +26,23 @@ namespace tungol::runtime
 	};
 
 
-	TUNGOL_EXPORT Texture loadTexture(vhl::Device& device, vhl::SegregatedAllocator& allocator, vhl::CopyContext& cpy, const std::string& path);
+	TUNGOL_EXPORT Texture createTexture(const vhl::Device& device, vhl::SegregatedAllocator& allocator, const TextureDesc& desc);
 
-	class TUNGOL_EXPORT TextureRegistry 
+	class TUNGOL_EXPORT TextureList 
 	{
 	public:
-		TextureRegistry(vhl::Device& dev, vhl::DescriptorPool& pool, vhl::DescriptorSetLayoutList& layouts, uint32_t maxTextures);
-		~TextureRegistry();
+		TextureList(RenderKernel& kernel, MaterialHeap& matHeap, uint32_t maxTextures);
+		~TextureList();
 
 		void foreachImage(const std::function<void(vhl::Image&)>& fn) const;
 
 		uint32_t add(Texture&& texture);
+		void remove(uint32_t idx);
 
-		const vhl::DescriptorSetHandle& set();
+		void retain(uint32_t frameSlot);
+		bool release(uint32_t frameSlot);
+
+		const vhl::DescriptorSetHandle& set() const;
 	private:
 		struct Impl;
 		std::unique_ptr<Impl> m_impl;

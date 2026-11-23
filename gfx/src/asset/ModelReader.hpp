@@ -69,6 +69,48 @@ namespace tungol::asset
 			model.indices.resize(header.indexBlobSize / sizeof(uint32_t));
 			memcpy(model.indices.data(), bytes.data() + header.indexBlobOffset, header.indexBlobSize);
 			
+			// ============================== LOCAL AABB ============================
+
+			model.localAABB.min = { +1e30f, +1e30f, +1e30f };
+			model.localAABB.max = { -1e30f, -1e30f, -1e30f };
+
+			for (const auto& v : model.staticVertices)
+			{
+				if (!std::isfinite(v.position.x) ||!std::isfinite(v.position.y) || !std::isfinite(v.position.z))
+				{
+					throw std::runtime_error("[ModelReader] Non-finite static vertex position in: " + file);
+				}
+
+				model.localAABB.min.x = std::min(model.localAABB.min.x, v.position.x);
+				model.localAABB.min.y = std::min(model.localAABB.min.y, v.position.y);
+				model.localAABB.min.z = std::min(model.localAABB.min.z, v.position.z);
+
+				model.localAABB.max.x = std::max(model.localAABB.max.x, v.position.x);
+				model.localAABB.max.y = std::max(model.localAABB.max.y, v.position.y);
+				model.localAABB.max.z = std::max(model.localAABB.max.z, v.position.z);
+			}
+
+			for (const auto& v : model.skinnedVertices)
+			{
+				if (!std::isfinite(v.position.x) ||!std::isfinite(v.position.y) || !std::isfinite(v.position.z))
+				{
+					throw std::runtime_error("[ModelReader] Non-finite skinned vertex position in: " + file);
+				}
+
+				model.localAABB.min.x = std::min(model.localAABB.min.x, v.position.x);
+				model.localAABB.min.y = std::min(model.localAABB.min.y, v.position.y);
+				model.localAABB.min.z = std::min(model.localAABB.min.z, v.position.z);
+
+				model.localAABB.max.x = std::max(model.localAABB.max.x, v.position.x);
+				model.localAABB.max.y = std::max(model.localAABB.max.y, v.position.y);
+				model.localAABB.max.z = std::max(model.localAABB.max.z, v.position.z);
+			}
+
+			if (model.localAABB.min.x > model.localAABB.max.x)
+			{
+				model.localAABB.min = { -1.0f, -1.0f, -1.0f };
+				model.localAABB.max = { 1.0f,  1.0f,  1.0f };
+			}
 			
 			return mEntry;
 		}

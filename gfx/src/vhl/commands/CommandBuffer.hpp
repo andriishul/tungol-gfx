@@ -34,7 +34,6 @@ namespace tungol::vhl
 		CommandPool(const Device& device, QueueFamily family, uint32_t count);
 		~CommandPool();
 
-
 		const CommandBuffer& commandBuffer(uint32_t index = 0) const;
 		CommandBuffer& commandBuffer(uint32_t index = 0);
 		

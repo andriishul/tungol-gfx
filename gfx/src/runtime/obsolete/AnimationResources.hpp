@@ -28,8 +28,12 @@ namespace tungol::runtime
         vhl::Buffer& boneLocalsSBs(uint32_t slot) const;
         vhl::Buffer& bonePaletteSBs(uint32_t slot) const;
 
+
+        void resolveClips(const core::Scene& scene, const core::ModelRegistry& models);
+
         const uint32_t boneCount() const;
-        const uint32_t boneOffset(uint32_t instanceIndex);
+        const uint32_t boneOffset(uint32_t idx) const;
+        const uint32_t clipIndex(uint32_t idx) const;
 
         const vhl::DescriptorSetHandle& sampleSets(uint32_t slot) const;
         const vhl::DescriptorSetHandle& hierarchySets(uint32_t slot) const;

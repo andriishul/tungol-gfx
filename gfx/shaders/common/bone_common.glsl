@@ -18,7 +18,6 @@ struct Animation
 struct Keyframe 
 {
     float time;
-
     vec3 position;
     vec4 rotation;
     vec3 scale;
@@ -27,7 +26,8 @@ struct Keyframe
 struct BoneMeta 
 {
     uint parentIndex;
-    uint instanceIndex;
+    uint inverseBindIndex;
+    uint bindPoseIndex;
     uint localBoneIndex;
 };
 
@@ -37,6 +37,7 @@ struct PlaybackState
     uint clipIndex;
     uint boneOffset;
     uint boneCount;
+    uint boneMetaOffset;
 };
 
 #endif

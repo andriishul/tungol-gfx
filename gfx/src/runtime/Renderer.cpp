@@ -1,12 +1,31 @@
 #include "Renderer.hpp"
 
+
 #include "RenderConfig.hpp"
-#include "helper/ShadowViewProj.hpp"
+
+// Core rendering
+#include "RenderKernel.hpp"
+#include "internal/KernelInternal.hpp"
+#include "internal/ResidencyInternal.hpp"
+
+// Heaps
+#include "heaps/GeometryHeap.hpp"
+#include "heaps/AnimationHeap.hpp"
+#include "heaps/DrawHeap.hpp"
+#include "heaps/MaterialHeap.hpp"
+
+// Data
+#include "data/ShaderViewData.hpp"
+#include <vhl/commands/DrawIndirectCommand.hpp>
+
+// Helper
 #include "helper/CatchGraphicsError.hpp"
 
-#include <core/PathResolver.hpp>
+#include "SceneResidency.hpp"
 
-#include <asset/ModelFormat.hpp>
+#include "ShadowMap.hpp"
+
+#include <core/PathResolver.hpp>
 #include <vhl/utils/SpvBytecode.hpp>
 
 #include <vhl/core/Allocator.hpp>
@@ -17,11 +36,10 @@
 #include <vhl/graph/CommandQueue.hpp>
 #include <vhl/graph/CommandEncoder.hpp>
 
-#include <vhl/commands/CopyContext.hpp>
-
 #include <vhl/pipeline/GraphicsPipeline.hpp>
 #include <vhl/pipeline/ComputePipeline.hpp>
 
+#include <runtime/Texture.hpp>
 #include <vhl/core/images/Image.hpp>
 #include <vhl/core/images/ImageView.hpp>
 #include <vhl/core/images/Sampler.hpp>
@@ -30,69 +48,38 @@
 #include <vhl/core/buffers/StorageBuffer.hpp>
 #include <vhl/core/buffers/StagingBuffer.hpp>
 
-#include <vhl/commands/DrawIndirectCommand.hpp>
-
 namespace tungol::runtime
 {
 	using namespace vhl;
 
-	namespace 
+
+#pragma region RenderParts
+	
+	namespace
 	{
 		static constexpr Format k_DepthFormat = Format::D32Float;
 
-		struct alignas(16) CameraData
-		{
-			math::mat4 projection;
-			math::mat4 view;
-			math::vec3 position;
-		};
-
-		struct alignas(16) LightData
-		{
-			math::vec3 direction;
-			float intensity;
-			math::vec3 color;
-		};
-
-		struct alignas(16) ShadowData
-		{
-			math::mat4 viewProj;
-			float bias;
-		};
-
-		struct FrameData
-		{
-			CameraData camera;
-			LightData light;
-			ShadowData shadow;
-		};
-
 		template<uint32_t FIF>
-		struct Camera 
+		struct Camera
 		{
-			DescriptorSetHandle frameSets[FIF];
-			std::unique_ptr<UniformBuffer> frameUBs[FIF];
-		};
+			Camera(SegregatedAllocator& allocator, Device& device,
+				DescriptorPool& descriptorPool, DescriptorSetLayoutList& layouts,
+				HazardTracker& tracker);
 
+			Buffer& UBs(uint32_t slot) const { return *m_ubs[slot]; }
+			const DescriptorSetHandle& Sets(uint32_t slot) const { return m_sets[slot]; }
 
-		template<uint32_t N, uint32_t FIF>
-		class Cameras
-		{
-		public:
-			Cameras(const Device& device, SegregatedAllocator& allocator, const DescriptorSetLayoutList& layouts,
-				DescriptorPool& descriptorPool, HazardTracker& tracker);
-		
-			~Cameras();
-
-			Camera<FIF> list[N];
+			~Camera();
 		private:
-			DescriptorPool& m_descriptorPool;
+			DescriptorPool& m_pool;
+			DescriptorSetHandle m_sets[FIF];
+			std::unique_ptr<UniformBuffer> m_ubs[FIF];
 		};
 
-		struct Push
+		struct SkinningParams
 		{
-			uint32_t totalBoneCount = 0;
-			uint32_t instanceCount = 0;
+			uint32_t totalThreads = 0;
+			uint32_t playbackCount = 0;
 		};
 
 		struct FrameState
@@ -102,9 +89,17 @@ namespace tungol::runtime
 			const core::ViewData* viewData = nullptr;
 
 			FramebufferSize fbSize{};
+
+			uint32_t slot = 0;
+
+			const core::Scene* scene = nullptr;
+
+			uint64_t layoutVersion = UINT64_MAX;
+			uint64_t clipVersion = UINT64_MAX;
+			uint64_t residencyVersion = UINT64_MAX;
 		};
 
-		inline vhl::Viewport toViewport(const core::Viewport& v) 
+		inline vhl::Viewport toViewport(const core::Viewport& v)
 		{
 			return vhl::Viewport
 			{
@@ -115,11 +110,11 @@ namespace tungol::runtime
 				.height = v.height,
 
 				.minDepth = v.minDepth,
-				.maxDepth = v.maxDepth				
-			}; 
+				.maxDepth = v.maxDepth
+			};
 		}
 
-		inline vhl::Scissor toScissor(const core::Scissor& s) 
+		inline vhl::Scissor toScissor(const core::Scissor& s)
 		{
 			return vhl::Scissor
 			{
@@ -178,6 +173,8 @@ namespace tungol::runtime
 
 				m_count = swapchain.colorImageCount();
 				m_colorFormat = swapchain.colorFormat();
+				m_width = swapchain.width();
+				m_height = swapchain.height();
 
 				m_swapViews.reserve(m_count);
 				m_depthImages.reserve(m_count);
@@ -231,10 +228,12 @@ namespace tungol::runtime
 			Image* msaaImage(uint32_t index) { return m_msaaImages.size() == m_count ? m_msaaImages[index].get() : nullptr; }
 			ImageView* msaaView(uint32_t index) { return m_msaaViews.size() == m_count ? m_msaaViews[index].get() : nullptr; }
 
-			Image& swapImage(uint32_t index) { m_ctx.swapchain().colorImage(index); }
+			Image& swapImage(uint32_t index) { return m_ctx.swapchain().colorImage(index); }
 			ImageView& swapView(uint32_t index) { return *m_swapViews[index]; }
 
 			Format colorFormat() const { return m_colorFormat; }
+			uint32_t width() const { return m_width; }
+			uint32_t height() const { return m_height; }
 			SampleCount samples() const { return m_samples; }
 			uint32_t count() const { return m_count; }
 		private:
@@ -245,6 +244,7 @@ namespace tungol::runtime
 			Format m_colorFormat = Format::Undefined;
 			SampleCount m_samples = SampleCount::One;
 			uint32_t m_count = 0;
+			uint32_t m_width = 0, m_height = 0;
 
 			std::vector<std::unique_ptr<Image>> m_depthImages;
 			std::vector<std::unique_ptr<ImageView>> m_depthViews;
@@ -499,7 +499,7 @@ namespace tungol::runtime
 			m_shadowStatic = std::make_unique<GraphicsPipeline>(m_device);
 			m_shadowStatic->init_layout(layoutDesc).build(pipelineDesc);
 		}
-		
+
 		void Pipelines::buildSkinnedShadow()
 		{
 			// ===================== SHADERS =================================
@@ -566,7 +566,7 @@ namespace tungol::runtime
 			m_shadowSkinned = std::make_unique<vhl::GraphicsPipeline>(m_device);
 			m_shadowSkinned->init_layout(layoutDesc).build(pipelineDesc);
 		}
-		
+
 		void Pipelines::buildBoneSample()
 		{
 			ComputePipelineDesc pipelineDesc
@@ -578,13 +578,13 @@ namespace tungol::runtime
 			vhl::PipelineLayoutDesc layoutDesc
 			{
 				.setLayouts = { m_layouts[3] },
-				.pushConstantRanges = { PushConstantRange{ ShaderStageFlags::Compute, 0, sizeof(Push) }}
+				.pushConstantRanges = { PushConstantRange{ ShaderStageFlags::Compute, 0, sizeof(SkinningParams) }}
 			};
 
 			m_boneSample = std::make_unique<ComputePipeline>(m_device);
 			m_boneSample->init_layout(layoutDesc).build(pipelineDesc);
 		}
-		
+
 		void Pipelines::buildBoneHierarchy()
 		{
 			ComputePipelineDesc pipelineDesc
@@ -595,219 +595,124 @@ namespace tungol::runtime
 			vhl::PipelineLayoutDesc layoutDesc
 			{
 				.setLayouts = { m_layouts[4] },
-				.pushConstantRanges = { PushConstantRange{ ShaderStageFlags::Compute, 0, sizeof(Push) }}
+				.pushConstantRanges = { PushConstantRange{ ShaderStageFlags::Compute, 0, sizeof(SkinningParams) }}
 			};
 
 			m_boneHierarchy = std::make_unique<ComputePipeline>(m_device);
 			m_boneHierarchy->init_layout(layoutDesc).build(pipelineDesc);
 		}
-		
-		template<uint32_t N, uint32_t FIF>
-		Cameras<N, FIF>::Cameras(const Device& device, SegregatedAllocator& allocator, const DescriptorSetLayoutList& layouts, DescriptorPool& descriptorPool, HazardTracker& tracker)
-			: m_descriptorPool(descriptorPool)
-		{
-			for (Camera<FIF>& c : list) 
-			{
-				for (uint32_t i = 0; i < FIF; ++i)
-				{
-					c.frameUBs[i] = std::make_unique<UniformBuffer>(device, allocator, sizeof(FrameData));
-					tracker.emplace(*c.frameUBs[i]);
 
-					c.frameSets[i] = descriptorPool.emplace(layouts[0]);
-					vhl::DescriptorWriter writer(c.frameSets[i]);
-					writer.uniformBuffer(*c.frameUBs[i], 0, 0, sizeof(FrameData));
-					writer.apply(device);
-				}
+		template<uint32_t FIF>
+		Camera<FIF>::Camera(SegregatedAllocator& allocator, Device& device,
+			DescriptorPool& descriptorPool, DescriptorSetLayoutList& layouts,
+			HazardTracker& tracker) : m_pool(descriptorPool)
+		{
+			for (uint32_t i = 0; i < FIF; ++i)
+			{
+				m_ubs[i] = std::make_unique<UniformBuffer>(device, allocator, sizeof(ShaderViewData));
+				m_sets[i] = descriptorPool.emplace(layouts[0]);
+				tracker.emplace(*m_ubs[i]);
+
+				vhl::DescriptorWriter writer(m_sets[i]);
+				writer.uniformBuffer(*m_ubs[i], 0, 0, m_ubs[i]->size());
+				writer.apply(device);
 			}
 		}
-		template<uint32_t N, uint32_t FIF>
-		Cameras<N, FIF>::~Cameras()
+
+		template<uint32_t FIF>
+		Camera<FIF>::~Camera()
 		{
-			for (Camera<FIF>& c : list)
+			for (uint32_t i = 0; i < FIF; ++i)
 			{
-				for (uint32_t i = 0; i < FIF; ++i)
-				{
-					c.frameUBs[i].reset();
-					m_descriptorPool.remove(c.frameSets[i]);
-				}
+				m_pool.remove(m_sets[i]);
+				m_ubs[i].reset();
 			}
 		}
-}
 
-	struct Renderer::Impl 
+	}
+
+#pragma endregion
+
+	struct Renderer::Impl
 	{
-	private:
-		static FrameData buildFrameData(const RenderScene& renderScene, const core::ViewData& data);
 	public:
 		Impl(RenderKernel& kern);
 		~Impl();
 
+		void begin(const core::ViewData& view);
+		void draw(const core::Scene& scene);
+		void end();
+	private:
+		void encodeUpload();
+		void encodeCopy();
+		void encodeBones();
+		void encodeShadow();
+		void encodeMainPass();
+	private:
+
 		RenderKernel& kernel;
-		CommandQueue& mainQueue;
-		
+		CommandQueue& direct;
+
 		uint32_t drawPerFrame = 0;
+
+		// Draw counts, recomputed every frame from buildRenderData().
+		uint32_t staticDrawCount = 0;
+		uint32_t skinnedDrawCount = 0;
+
 		RenderTargets targets;
 		Pipelines pipelines;
 
-		Cameras<main::k_MaxScenes, RenderKernel::FramesInFlight> cameras;
+		Camera<RenderKernel::FramesInFlight> camera;
 
-		void begin();
-		void draw(const RenderScene& renderScene, const core::ViewData& view);
-		void end();
-
-		void close() noexcept;
-	private:
-		void recordCopyData(CommandRecorder& recorder, const RenderScene& renderScene, const core::Scene& scene, uint32_t frameSlot, uint32_t drawId);
-		void recordDrawPipelines(CommandRecorder& recorder, const RenderScene& renderScene, uint32_t frameSlot, uint32_t drawId);
-		void recordDrawShadows(CommandRecorder& recorder, const RenderScene& renderScene, uint32_t frameSlot, uint32_t drawId);
-	private:
+		const std::array<float, 4> defaultColor = { 0.19f, 0.30f, 0.47f, 1.0f };
 		std::unique_ptr<CommandEncoder> encoder;
-		FrameState frameState;
+		ResidencyManager& residencyManager;
+
+		struct Heaps 
+		{
+			Heaps(ResidencyManager& rm);
+			
+			GeometryHeap& geom;
+			DrawHeap& draw;
+			AnimationHeap& anim;
+			MaterialHeap& mat;
+			TextureList& texture;
+
+		} heaps;
+
+		ShadowMap shadowMap;
+		FrameDrawData drawData;
+		FrameState frame;
+		UploadBatch upload;
+
+		std::optional<asset::AABB> sceneAABB;
+		SceneResidency sceneResidency;
 	};
 
 #pragma region Renderer::Impl
 
-	FrameData Renderer::Impl::buildFrameData(const RenderScene& renderScene, const core::ViewData& data)
-	{
-		CameraData cd
-		{
-			.projection = data.camera.projection,
-			.view = data.camera.view,
-			.position = data.camera.position
-		};
+	Renderer::Impl::Heaps::Heaps(ResidencyManager& rm) :
+		geom(ResidencyInternal::geomHeap(rm)), anim(ResidencyInternal::animHeap(rm)),
+		draw(ResidencyInternal::drawHeap(rm)), mat(ResidencyInternal::matHeap(rm)),
+		texture(ResidencyInternal::textures(rm))
+	{}
 
-
-		LightData ld
-		{
-			.direction = data.light.direction,
-			.intensity = data.light.intensity,
-			.color = data.light.color
-		};
-
-
-		auto min = renderScene.sceneMin(); 
-		
-		auto max = renderScene.sceneMax();
-
-
-		ShadowData sd
-		{
-			.viewProj = computeShadowViewProj(min, max, ld.direction),
-			.bias = data.shadow.bias
-		};
-
-		FrameData fd{};
-		fd.camera = cd;
-		fd.light = ld;
-		fd.shadow = sd;
-
-		return fd;
-	}
-
-	void Renderer::Impl::recordDrawPipelines(CommandRecorder& recorder, const RenderScene& renderScene, uint32_t frameSlot, uint32_t drawId)
-	{
-		if (renderScene.staticDrawCount() > 0)
-		{
-			recorder.bindVertexBuffer(renderScene.staticVB());
-			recorder.bindPipeline(pipelines.staticPbr());
-			recorder.bindIndexBuffer(renderScene.indexBuf(), IndexType::Uint32);
-			
-			recorder.bindDescriptorSet(cameras.list[drawId].frameSets[frameSlot], PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 0);
-			recorder.bindDescriptorSet(renderScene.objectSets(frameSlot), PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 1);
-			recorder.bindDescriptorSet(renderScene.textures().set(), PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 2);
-			recorder.bindDescriptorSet(renderScene.shadows().set(), PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 3);
-
-			recorder.drawIndexedIndirect(renderScene.indirectBuf(), 0, renderScene.staticDrawCount(), sizeof(vhl::DrawIndexedIndirectCommand));
-		}
-
-		if (renderScene.skinnedDrawCount() > 0) 
-		{
-			recorder.bindVertexBuffer(renderScene.skinnedVB());
-			recorder.bindPipeline(pipelines.skinnedPbr());
-			recorder.bindIndexBuffer(renderScene.indexBuf(), IndexType::Uint32);
-			
-			
-			recorder.bindDescriptorSet(cameras.list[drawId].frameSets[frameSlot], PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 0);
-			recorder.bindDescriptorSet(renderScene.objectSets(frameSlot), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 1);
-			recorder.bindDescriptorSet(renderScene.textures().set(), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 2);
-			
-			recorder.bindDescriptorSet(renderScene.animations().hierarchySets(frameSlot), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 3);
-			recorder.bindDescriptorSet(renderScene.shadows().set(), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 4);
-
-			recorder.drawIndexedIndirect(renderScene.indirectBuf(), renderScene.staticDrawCount() * sizeof(vhl::DrawIndexedIndirectCommand), renderScene.skinnedDrawCount(), sizeof(vhl::DrawIndexedIndirectCommand));
-		}
-	}
-
-	void Renderer::Impl::recordDrawShadows(CommandRecorder& recorder, const RenderScene& renderScene, uint32_t frameSlot, uint32_t drawId)
-	{
-		if (renderScene.staticDrawCount() > 0)
-		{
-			recorder.bindVertexBuffer(renderScene.staticVB());
-			recorder.bindPipeline(pipelines.staticShadow());
-			recorder.bindIndexBuffer(renderScene.indexBuf(), IndexType::Uint32);
-
-			recorder.bindDescriptorSet(cameras.list[drawId].frameSets[frameSlot], PipelineType::Graphics, pipelines.staticShadow().layoutHandle(), 0);
-			recorder.bindDescriptorSet(renderScene.objectSets(frameSlot), PipelineType::Graphics, pipelines.staticShadow().layoutHandle(), 1);
-
-			recorder.drawIndexedIndirect(renderScene.indirectBuf(), 0, renderScene.staticDrawCount(), sizeof(DrawIndexedIndirectCommand));
-		}
-
-		if (renderScene.skinnedDrawCount() > 0)
-		{
-			recorder.bindVertexBuffer(renderScene.skinnedVB());
-			recorder.bindPipeline(pipelines.skinnedShadow());
-			recorder.bindIndexBuffer(renderScene.indexBuf(), IndexType::Uint32);
-
-			recorder.bindDescriptorSet(cameras.list[drawId].frameSets[frameSlot], PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 0);
-			recorder.bindDescriptorSet(renderScene.objectSets(frameSlot), PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 1);
-			recorder.bindDescriptorSet(renderScene.animations().hierarchySets(frameSlot), PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 2);
-
-			recorder.drawIndexedIndirect(renderScene.indirectBuf(), renderScene.staticDrawCount() * sizeof(DrawIndexedIndirectCommand),  renderScene.skinnedDrawCount(), sizeof(DrawIndexedIndirectCommand));
-		}
-	}
-
-	void Renderer::Impl::recordCopyData(CommandRecorder& recorder, const RenderScene& renderScene, const core::Scene& scene, uint32_t frameSlot, uint32_t drawId)
-	{
-		if (uint8_t* playbackSrc = renderScene.buildPlayback(scene)) 
-		{
-			auto& playbackTB = renderScene.animations().playbackTBs(frameSlot);
-			memcpy(playbackTB.pMappedData(), playbackSrc, renderScene.animations().playbackSize());
-			recorder.copyTo(playbackTB, renderScene.animations().playbackSBs(frameSlot), 0, 0, playbackTB.size());
-		}
-
-		if (uint8_t* instanceSrc = renderScene.build(scene)) 
-		{
-			auto& instanceTB = renderScene.instanceTBs(frameSlot);
-			memcpy(instanceTB.pMappedData(), instanceSrc, instanceTB.size());
-			recorder.copyTo(instanceTB, renderScene.instanceSBs(frameSlot), 0, 0, instanceTB.size());
-		}
-
-		if (frameState.viewData)
-		{
-			auto& frameUB = *cameras.list[drawId].frameUBs[frameSlot];
-			const FrameData fd = buildFrameData(renderScene, *frameState.viewData);
-			recorder.updateUniformBuffer(frameUB, &fd, 0, frameUB.size());
-		}
-	}
-
-
-	Renderer::Impl::Impl(RenderKernel& kern)
-		: kernel(kern), 
-		mainQueue(kern.mainQueue()), 
-		targets(kernel.context(), kernel.allocator(), kernel.tracker()),
-		pipelines(kernel.layouts(), kernel.context().activeDevice()),
-		cameras(kernel.context().activeDevice(), kernel.allocator(), 
-			kernel.layouts(), kernel.descriptorPool(), kernel.tracker())
+	Renderer::Impl::Impl(RenderKernel& kern) : kernel(kern), 
+		camera(KernelInternal::allocator(kern), KernelInternal::context(kern).activeDevice(), KernelInternal::descriptorPool(kern), KernelInternal::layouts(kern), KernelInternal::tracker(kern)),
+		targets(KernelInternal::context(kern), KernelInternal::allocator(kern), KernelInternal::tracker(kern)),
+		pipelines(KernelInternal::layouts(kern), KernelInternal::context(kern).activeDevice()), residencyManager(KernelInternal::residency(kern)),
+		direct(KernelInternal::directQueue(kern)), heaps(KernelInternal::residency(kern)), 
+		shadowMap(kern, main::k_ShadowMapFormat, main::k_ShadowMapResolution)
 	{
 		const auto fbSize = kernel.window().pixelSize();
 
-		frameState.fbSize = fbSize;
+		frame.fbSize = fbSize;
 
 		targets.resize();
-		
+
 		pipelines.buildStaticPbr(fbSize, targets.colorFormat(), targets.samples());
 		pipelines.buildSkinnedPbr(fbSize, targets.colorFormat(), targets.samples());
-		
+
 		pipelines.buildStaticShadow();
 		pipelines.buildSkinnedShadow();
 
@@ -815,127 +720,215 @@ namespace tungol::runtime
 		pipelines.buildBoneSample();
 	}
 
-	Renderer::Impl::~Impl()
+	Renderer::Impl::~Impl() 
 	{
-		try 
+		try
 		{
-			kernel.context().activeDevice().wait();
+			KernelInternal::context(kernel).activeDevice().wait();
 		}
 		CATCH_GRAPHICS_ERROR
 		{
-			cameras.~Cameras();
-			pipelines.~Pipelines();
-			targets.~RenderTargets();
+		
 		}
 	}
-
-	void Renderer::Impl::begin()
+	
+	void Renderer::Impl::encodeUpload()
 	{
-		auto newFbSize = kernel.window().pixelSize();
-
-		if (newFbSize.width <= 1 || newFbSize.height <= 1)
+		if (!upload.buffers.empty())
 		{
-			frameState.imageIndex = std::nullopt;
-			return;
+			const auto bufs = upload.buffers;
+
+			for (const auto& b : bufs)
+			{
+				auto pass = encoder->encodePass([b](vhl::CommandRecorder& recorder)
+				{
+					recorder.copyTo(*b.src, *b.dst, b.srcOffset, b.dstOffset, b.size);
+				});
+
+				pass.useBuffer(*b.src, UsageIntent::TransferSrc, b.srcOffset, b.size)
+					.useBuffer(*b.dst, UsageIntent::TransferDst, b.dstOffset, b.size);
+			}
+
+			upload.buffers.clear();
 		}
 
-		mainQueue.begin();
-
-		if (!frameState.presentable || frameState.fbSize != newFbSize)
+		if(!upload.images.empty())
 		{
-			targets.resize();
-			frameState.fbSize = newFbSize;
-			frameState.presentable = true;
-		}
+			const auto imgs = upload.images;
 
-		auto& swapchain = kernel.context().swapchain();
+			for (const auto& i : imgs)
+			{
+				auto pass = encoder->encodePass([i](vhl::CommandRecorder& recorder)
+				{
+					recorder.copyTo(*i.src, *i.dst, i.srcOffset, i.width, i.height, i.depth, 0, 0, 0, i.mip, i.layer);
+				});
+
+				pass.useBuffer(*i.src, UsageIntent::TransferSrc, i.srcOffset, i.size)
+					.useImage(*i.dst, UsageIntent::TransferDst);
+			}
+
+			upload.images.clear();
+		}
+	}
+	
+	void Renderer::Impl::encodeCopy()
+	{
+		const core::Scene* scene = frame.scene;
 		
-		AcquireResult acquireResult = mainQueue.nextImageIndex(swapchain);	
+		const bool layoutChanged = scene && (
+			scene->layoutVersion() != frame.layoutVersion ||
+			residencyManager.version() != frame.residencyVersion);
 
-		frameState.presentable = acquireResult.success;
+		const bool clipChanged = scene && (scene->clipVersion() != frame.clipVersion);
 
-		if (!frameState.presentable) return;
-
-		if (acquireResult.imageIndex.has_value()) 
+		if (layoutChanged)
 		{
-			frameState.imageIndex = acquireResult.imageIndex.value();
+			sceneAABB = std::nullopt;
+			drawData = FrameDrawData{};
+			auto animRefs = buildAnimRefs(*scene, kernel.assets(), residencyManager);
+
+			SceneSnapshot snapshot
+			{
+				.scene = *scene,
+				.assets = kernel.assets(),
+				.animRefs = animRefs,
+			};
+
+			buildDrawData(snapshot, drawData, residencyManager);
+
+			asset::AABB aabb;
+			if (computeSceneAABB(*scene, kernel.assets(), aabb))
+			{
+				sceneAABB = aabb;
+			}
+
+			frame.layoutVersion = scene->layoutVersion();
+			frame.clipVersion = scene->clipVersion();
+			frame.residencyVersion = residencyManager.version();
+
+			staticDrawCount = drawData.staticIndirectCount;
+			skinnedDrawCount = drawData.skinnedIndirectCount;
+		}
+		else if (clipChanged)
+		{
+			auto animRefs = buildAnimRefs(*scene, kernel.assets(), residencyManager);
+			applyAnimRefs(animRefs, *scene, residencyManager, drawData);
+			frame.clipVersion = scene->clipVersion();
 		}
 
-		encoder = std::make_unique<CommandEncoder>(mainQueue, kernel.tracker());
-		
-		auto& colorImage = swapchain.colorImage(*frameState.imageIndex);
+		if (scene)
+		{
+			sceneResidency.updateState(residencyManager, *scene, drawData);
+		}
 
-		encoder->setDrawable(colorImage);
-		drawPerFrame = 0;
+		auto pass = encoder->encodePass([&, this](CommandRecorder& recorder)
+		{
+			if (!drawData.indirectCmds.empty())
+			{
+				auto& indirectTB = heaps.draw.indirectTBs(frame.slot);
+				auto& indirectBuf = heaps.draw.indirectBufs(frame.slot);
+				uint64_t size = drawData.indirectCmds.size() * sizeof(vhl::DrawIndexedIndirectCommand);
+
+				memcpy(indirectTB.pMappedData(), drawData.indirectCmds.data(), size);
+				recorder.copyTo(indirectTB, indirectBuf, 0, 0, size);
+			}
+			if (!drawData.playbacks.empty())
+			{
+				auto& playbackTB = heaps.anim.playbackTBs(frame.slot);
+
+				uint64_t size = drawData.playbacks.size() * sizeof(ShaderPlaybackState);
+
+				memcpy(playbackTB.pMappedData(), drawData.playbacks.data(), size);
+				recorder.copyTo(playbackTB, heaps.anim.playbackSBs(frame.slot), 0, 0, size);
+			}
+				
+			if (!drawData.instances.empty())
+			{
+				auto& instanceTB = heaps.draw.instancesTBs(frame.slot);
+				auto& instanceSB = heaps.draw.instancesSBs(frame.slot);
+
+			
+				uint64_t size = drawData.instances.size() * sizeof(ShaderInstance);
+				memcpy(instanceTB.pMappedData(), drawData.instances.data(), size);
+				recorder.copyTo(instanceTB, instanceSB, 0, 0, size);
+			}
+
+			if (frame.viewData && frame.scene)
+			{
+				auto& cameraUB = camera.UBs(frame.slot);
+				const ShaderViewData svd = buildShaderViewData(*scene, *frame.viewData, sceneAABB);
+				recorder.updateUniformBuffer(cameraUB, &svd, 0, cameraUB.size());
+			}
+		});
+
+		pass.useBuffer(heaps.anim.playbackTBs(frame.slot), UsageIntent::TransferSrc)
+			.useBuffer(heaps.anim.playbackSBs(frame.slot), UsageIntent::TransferDst)
+			.useBuffer(heaps.draw.indirectTBs(frame.slot), UsageIntent::TransferSrc)
+			.useBuffer(heaps.draw.indirectBufs(frame.slot), UsageIntent::TransferDst)
+			.useBuffer(heaps.draw.instancesTBs(frame.slot), UsageIntent::TransferSrc)
+			.useBuffer(heaps.draw.instancesSBs(frame.slot), UsageIntent::TransferDst)
+			.useBuffer(camera.UBs(frame.slot), UsageIntent::TransferDst);
 	}
 
-	void Renderer::Impl::draw(const RenderScene& renderScene, const core::ViewData& view)
+	void Renderer::Impl::encodeBones()
 	{
-		const auto& scene = renderScene.scene();
+		uint32_t totalBonesCount = totalBoneCount(drawData);
+		uint32_t playbackCount = static_cast<uint32_t>(drawData.playbacks.size());
+
+		if (totalBonesCount == 0 || playbackCount == 0) return;
 		
-		if (!encoder) return;
-		if (!frameState.imageIndex.has_value() || !frameState.presentable) return;
-		if (drawPerFrame >= main::k_MaxScenes) throw std::runtime_error("[Renderer::draw] too many scenes drawn in one frame");
+		if (totalBonesCount > main::k_MaxSkinnedInstances * main::k_MaxBonesPerInstance) 
+			throw std::runtime_error("[Renderer::Impl::encodeBones] palette overflow");
 
-		auto& swapchain = kernel.context().swapchain();
+		const uint32_t groups = (totalBonesCount + 63) / 64;
 
-		auto& depthImage = targets.depthImage(*frameState.imageIndex);
+		const SkinningParams params{ totalBonesCount, playbackCount };
 
-		frameState.viewData = nullptr;
-		frameState.viewData = &view;
-
-		const uint32_t frameSlot = mainQueue.frameSlot();
-
-		const uint32_t drawId = drawPerFrame++;
-
-		auto& colorImage = swapchain.colorImage(*frameState.imageIndex);
-		
-		encoder->encodePass([&, frameSlot, drawId](vhl::CommandRecorder& recorder)
-		{
-			recordCopyData(recorder, renderScene, scene, frameSlot, drawId);
-		})
-		.useBuffer(*cameras.list[drawId].frameUBs[frameSlot], UsageIntent::TransferDst)
-		.useBuffer(renderScene.animations().playbackTBs(frameSlot), UsageIntent::TransferSrc)
-		.useBuffer(renderScene.animations().playbackSBs(frameSlot), UsageIntent::TransferDst)
-		.useBuffer(renderScene.instanceTBs(frameSlot), UsageIntent::TransferSrc)
-		.useBuffer(renderScene.instanceSBs(frameSlot), UsageIntent::TransferDst);
-
-		const uint32_t bonesCount = renderScene.animations().boneCount();
-		const uint32_t groups = (bonesCount + 63) / 64;
-
-		const Push push{ bonesCount, static_cast<uint32_t>(scene.instances().size()) };
-
-		encoder->encodePass([&, frameSlot, groups, push](CommandRecorder& recorder)
+		encoder->encodePass([this, groups, params](CommandRecorder& recorder)
 		{
 			recorder.bindPipeline(pipelines.boneSample());
-			recorder.bindDescriptorSet(renderScene.animations().sampleSets(frameSlot), PipelineType::Compute, pipelines.boneSample().layoutHandle(), 0);
-			recorder.pushConstants(pipelines.boneSample().layoutHandle(), ShaderStageFlags::Compute, 0, sizeof(push), &push);
+			recorder.bindDescriptorSet(heaps.anim.sampleSets(frame.slot), PipelineType::Compute, pipelines.boneSample().layoutHandle(), 0);
+			recorder.pushConstants(pipelines.boneSample().layoutHandle(), ShaderStageFlags::Compute, 0, sizeof(params), &params);
 			recorder.dispatch(groups, 1, 1);
 		})
-		.useBuffer(renderScene.animations().boneMetaSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().playbackSBs(frameSlot), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().animationsSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().channelsSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().keyframesSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().bindPosesSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().boneLocalsSBs(frameSlot), UsageIntent::ShaderWriteCompute);
-		
-		encoder->encodePass([&, frameSlot, groups, push](CommandRecorder& recorder)
+		.useBuffer(heaps.anim.playbackSBs(frame.slot), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.boneLocalsSBs(frame.slot), UsageIntent::ShaderWriteCompute)
+		.useBuffer(heaps.anim.boneMetasPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.animationsPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.channelsPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.keyframesPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.bindPosesPool().buffer(), UsageIntent::ShaderReadCompute);
+
+		encoder->encodePass([this, groups, params](CommandRecorder& recorder)
 		{
 			recorder.bindPipeline(pipelines.boneHierarchy());
-			recorder.bindDescriptorSet(renderScene.animations().hierarchySets(frameSlot), PipelineType::Compute, pipelines.boneHierarchy().layoutHandle(), 0);
-			recorder.pushConstants(pipelines.boneHierarchy().layoutHandle(), ShaderStageFlags::Compute, 0, sizeof(push), &push);
+			recorder.bindDescriptorSet(heaps.anim.hierarchySets(frame.slot), PipelineType::Compute, pipelines.boneHierarchy().layoutHandle(), 0);
+			recorder.pushConstants(pipelines.boneHierarchy().layoutHandle(), ShaderStageFlags::Compute, 0, sizeof(params), &params);
 			recorder.dispatch(groups, 1, 1);
 		})
-		.useBuffer(renderScene.animations().boneMetaSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().inverseBindsSB(), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().boneLocalsSBs(frameSlot), UsageIntent::ShaderReadCompute)
-		.useBuffer(renderScene.animations().bonePaletteSBs(frameSlot), UsageIntent::ShaderWriteCompute);
+		.useBuffer(heaps.anim.playbackSBs(frame.slot), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.boneMetasPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.inverseBindsPool().buffer(), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.boneLocalsSBs(frame.slot), UsageIntent::ShaderReadCompute)
+		.useBuffer(heaps.anim.bonePaletteSBs(frame.slot), UsageIntent::ShaderWriteCompute);
+	}
 
-		auto& shadowView = renderScene.shadows().view();
-		auto& shadowImage = renderScene.shadows().image();
+	void Renderer::Impl::encodeShadow()
+	{
+		auto& shadowView = shadowMap.view();
+		auto& shadowImage = shadowMap.image();
 
-		encoder->encodePass([&, frameSlot, drawId](CommandRecorder& recorder)
+		auto& staticVB = heaps.geom.staticPool().buffer();
+		auto& skinnedVB = heaps.geom.skinnedPool().buffer();
+		auto& indexBuf = heaps.geom.indexedPool().buffer();
+
+		auto& indirectBuf = heaps.draw.indirectBufs(frame.slot);
+		auto& instanceSB = heaps.draw.instancesSBs(frame.slot);
+
+		auto& objectSet = heaps.draw.objectSets(frame.slot);
+		auto& cameraSet = camera.Sets(frame.slot);
+
+		encoder->encodePass([&, this](CommandRecorder& recorder)
 		{
 			RenderingAttachment depthAttachment
 			{
@@ -970,134 +963,283 @@ namespace tungol::runtime
 
 			recorder.beginRendering(info);
 
-			recordDrawShadows(recorder, renderScene, frameSlot, drawId);
+			if (staticDrawCount > 0)
+			{
+				recorder.bindVertexBuffer(staticVB);
+				recorder.bindPipeline(pipelines.staticShadow());
+				recorder.bindIndexBuffer(indexBuf, IndexType::Uint32);
+
+				recorder.bindDescriptorSet(cameraSet, PipelineType::Graphics, pipelines.staticShadow().layoutHandle(), 0);
+				recorder.bindDescriptorSet(objectSet, PipelineType::Graphics, pipelines.staticShadow().layoutHandle(), 1);
+
+				recorder.drawIndexedIndirect(indirectBuf, 0, staticDrawCount, sizeof(DrawIndexedIndirectCommand));
+			}
+
+			if (skinnedDrawCount > 0)
+			{
+				recorder.bindVertexBuffer(skinnedVB);
+				recorder.bindPipeline(pipelines.skinnedShadow());
+				recorder.bindIndexBuffer(indexBuf, IndexType::Uint32);
+
+				recorder.bindDescriptorSet(cameraSet, PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 0);
+				recorder.bindDescriptorSet(objectSet, PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 1);
+				recorder.bindDescriptorSet(heaps.anim.hierarchySets(frame.slot), PipelineType::Graphics, pipelines.skinnedShadow().layoutHandle(), 2);
+
+				recorder.drawIndexedIndirect(indirectBuf, staticDrawCount * sizeof(DrawIndexedIndirectCommand), skinnedDrawCount, sizeof(DrawIndexedIndirectCommand));
+			}
 
 			recorder.endRendering();
 		})
 		.useImage(shadowImage, UsageIntent::DepthStencilAttachment)
-		.useBuffer(renderScene.staticVB(), UsageIntent::VertexAttributeRead)
-		.useBuffer(renderScene.skinnedVB(), UsageIntent::VertexAttributeRead)
-		.useBuffer(renderScene.indexBuf(), UsageIntent::IndexRead)
-		.useBuffer(renderScene.indirectBuf(), UsageIntent::IndirectRead)
-		.useBuffer(renderScene.instanceSBs(frameSlot), UsageIntent::ShaderReadVertex)
-		.useBuffer(*cameras.list[drawId].frameUBs[frameSlot], UsageIntent::UniformReadVertex)
-		.useBuffer(renderScene.animations().bonePaletteSBs(frameSlot), UsageIntent::ShaderReadVertex);
+			.useBuffer(heaps.anim.bonePaletteSBs(frame.slot), UsageIntent::ShaderReadVertex)
+			.useBuffer(camera.UBs(frame.slot), UsageIntent::UniformReadVertex)
+			.useBuffer(instanceSB, UsageIntent::ShaderReadVertex)
+			.useBuffer(staticVB, UsageIntent::VertexAttributeRead)
+			.useBuffer(skinnedVB, UsageIntent::VertexAttributeRead)
+			.useBuffer(indirectBuf, UsageIntent::IndirectRead)
+			.useBuffer(indexBuf, UsageIntent::IndexRead);
+	}
 
-		auto passBuilder = encoder->encodePass([&, frameSlot, drawId](CommandRecorder& recorder)
+	void Renderer::Impl::encodeMainPass()
+	{
+		auto& shadowView = shadowMap.view();
+		auto& shadowImage = shadowMap.image();
+		auto& shadowSet = shadowMap.set();
+
+		auto& staticVB = heaps.geom.staticPool().buffer();
+		auto& skinnedVB = heaps.geom.skinnedPool().buffer();
+		auto& indexBuf = heaps.geom.indexedPool().buffer();
+		
+		auto& indirectBuf = heaps.draw.indirectBufs(frame.slot);
+		auto& instanceSB = heaps.draw.instancesSBs(frame.slot);
+
+		auto& objectSet = heaps.draw.objectSets(frame.slot);
+		auto& cameraSet = camera.Sets(frame.slot);
+
+		auto& textures = heaps.texture;
+
+		auto passBuilder = encoder->encodePass([&, this](CommandRecorder& recorder)
 		{
 			RenderingAttachment depthAttachment
 			{
-				.imageView = &targets.depthView(*frameState.imageIndex),
+				.imageView = &targets.depthView(*frame.imageIndex),
 				.layout = ImageLayout::DepthStencilAttachment,
-				.loadOp = drawId == 0 ? AttachmentLoadOp::Clear : AttachmentLoadOp::Load,
+				.loadOp = AttachmentLoadOp::Clear,
 
 				.storeOp = AttachmentStoreOp::Store,
 				.clearValue = 1.0f
 			};
 
+			const core::ViewData* view = frame.viewData;
+
+			const auto clearColor = view ? view->clearColor : defaultColor;
+
 			RenderingAttachment colorAttachment{};
 			colorAttachment.loadOp = AttachmentLoadOp::Load;
 			colorAttachment.storeOp = AttachmentStoreOp::Store;
-			colorAttachment.clearValue = view.clearColor;
-			
+			colorAttachment.clearValue = view->clearColor;
+
 			if (targets.samples() != SampleCount::One)
 			{
-				colorAttachment.imageView = targets.msaaView(*frameState.imageIndex);
+				colorAttachment.imageView = targets.msaaView(*frame.imageIndex);
 				colorAttachment.layout = ImageLayout::ColorAttachment;
 
-				colorAttachment.resolveImageView = &targets.swapView(*frameState.imageIndex);
+				colorAttachment.resolveImageView = &targets.swapView(*frame.imageIndex);
 				colorAttachment.resolveLayout = ImageLayout::ColorAttachment;
 			}
 			else
 			{
-				colorAttachment.imageView = &targets.swapView(*frameState.imageIndex);
+				colorAttachment.imageView = &targets.swapView(*frame.imageIndex);
 				colorAttachment.layout = ImageLayout::ColorAttachment;
 
-				colorAttachment.resolveImageView = nullptr; 
+				colorAttachment.resolveImageView = nullptr;
 				colorAttachment.resolveLayout = ImageLayout::Undefined;
 			}
 
 			RenderingInfo info
 			{
-				.width = colorImage.width(),
-				.height = colorImage.height(),
+				.width = targets.width(),
+				.height = targets.height(),
 				.colorAttachment = colorAttachment,
 				.depthAttachment = depthAttachment
 			};
 
 			Scissor scissor{};
-			
-			if (!view.scissor.has_value())
+
+			if (!view || !view->scissor.has_value())
 			{
 				scissor.width = info.width;
 				scissor.height = info.height;
 			}
-			else scissor = toScissor(*view.scissor);
+			else scissor = toScissor(*view->scissor);
 
 			Viewport viewport{};
 
-			if (!view.viewport.has_value())
+			if (!view || !view->viewport.has_value())
 			{
 				viewport.height = static_cast<float>(info.height);
 				viewport.width = static_cast<float>(info.width);
 			}
-			else viewport = toViewport(*view.viewport);
-					
+			else viewport = toViewport(*view->viewport);
+
 			recorder.beginRendering(info);
 
 			recorder.setScissor(scissor);
 			recorder.setViewport(viewport);
 
-			recorder.clearAttachment(ImageAspectFlags::Color, scissor, view.clearColor);
+			recorder.clearAttachment(ImageAspectFlags::Color, scissor, clearColor);
 
-			recordDrawPipelines(recorder, renderScene, frameSlot, drawId);
-			
+			if (staticDrawCount > 0)
+			{
+				recorder.bindVertexBuffer(staticVB);
+				recorder.bindPipeline(pipelines.staticPbr());
+				recorder.bindIndexBuffer(indexBuf, IndexType::Uint32);
+
+				recorder.bindDescriptorSet(cameraSet, PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 0);
+				recorder.bindDescriptorSet(objectSet, PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 1);
+				recorder.bindDescriptorSet(textures.set(), PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 2);
+				recorder.bindDescriptorSet(shadowSet, PipelineType::Graphics, pipelines.staticPbr().layoutHandle(), 3);
+
+				recorder.drawIndexedIndirect(indirectBuf, 0, staticDrawCount, sizeof(vhl::DrawIndexedIndirectCommand));
+			}
+
+			if (skinnedDrawCount > 0)
+			{
+				recorder.bindVertexBuffer(skinnedVB);
+				recorder.bindPipeline(pipelines.skinnedPbr());
+				recorder.bindIndexBuffer(indexBuf, IndexType::Uint32);
+
+
+				recorder.bindDescriptorSet(cameraSet, PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 0);
+				recorder.bindDescriptorSet(objectSet, PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 1);
+				recorder.bindDescriptorSet(textures.set(), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 2);
+
+				recorder.bindDescriptorSet(heaps.anim.hierarchySets(frame.slot), PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 3);
+				recorder.bindDescriptorSet(shadowSet, PipelineType::Graphics, pipelines.skinnedPbr().layoutHandle(), 4);
+
+				recorder.drawIndexedIndirect(indirectBuf, staticDrawCount * sizeof(vhl::DrawIndexedIndirectCommand), skinnedDrawCount, sizeof(vhl::DrawIndexedIndirectCommand));
+			}
 			recorder.endRendering();
 		});
 
-		passBuilder.useImage(colorImage, UsageIntent::ColorAttachment)
-			.useImage(depthImage, UsageIntent::DepthStencilAttachment)
-			.useBuffer(*cameras.list[drawId].frameUBs[frameSlot], UsageIntent::UniformReadVertex)
-			.useBuffer(renderScene.instanceSBs(frameSlot), UsageIntent::ShaderReadVertex)
-			.useBuffer(renderScene.animations().bonePaletteSBs(frameSlot), UsageIntent::ShaderReadVertex)
-			.useImage(renderScene.shadows().image(), UsageIntent::ShaderReadFragment)
-			.useBuffer(renderScene.materialSB(), UsageIntent::ShaderReadFragment);
+		passBuilder.useImage(targets.swapImage(*frame.imageIndex), UsageIntent::ColorAttachment)
+			.useImage(targets.depthImage(*frame.imageIndex), UsageIntent::DepthStencilAttachment)
+			.useBuffer(heaps.anim.bonePaletteSBs(frame.slot), UsageIntent::ShaderReadVertex)
+			.useBuffer(heaps.mat.pool().buffer(), UsageIntent::ShaderReadFragment)
+			.useBuffer(camera.UBs(frame.slot), UsageIntent::UniformReadVertex)
+			.useBuffer(instanceSB, UsageIntent::ShaderReadVertex)
+			.useBuffer(staticVB, UsageIntent::VertexAttributeRead)
+			.useBuffer(skinnedVB, UsageIntent::VertexAttributeRead)
+			.useImage(shadowImage, UsageIntent::ShaderReadFragment)
+			.useBuffer(indirectBuf, UsageIntent::IndirectRead)
+			.useBuffer(indexBuf, UsageIntent::IndexRead);
 			
-		
+
+
 		if (targets.samples() != SampleCount::One)
 		{
-			if(auto msaaImage = targets.msaaImage(*frameState.imageIndex))
+			if (auto msaaImage = targets.msaaImage(*frame.imageIndex))
 				passBuilder.useImage(*msaaImage, UsageIntent::ColorAttachment);
 		}
-		
-		renderScene.textures().foreachImage([&passBuilder](vhl::Image& img)
+
+		textures.foreachImage([&passBuilder](vhl::Image& img)
 		{
 			passBuilder.useImage(img, UsageIntent::ShaderReadFragment);
 		});
 	}
 
+	void Renderer::Impl::begin(const core::ViewData& view)
+	{
+		auto newFbSize = kernel.window().pixelSize();
+
+		if (newFbSize.width <= 1 || newFbSize.height <= 1)
+		{
+			frame.imageIndex = std::nullopt;
+			return;
+		}
+
+		direct.begin();
+
+		if (!frame.presentable || frame.fbSize != newFbSize)
+		{
+			targets.resize();
+			frame.fbSize = newFbSize;
+			frame.presentable = true;
+		}
+
+		auto& swapchain = KernelInternal::context(kernel).swapchain();
+
+		AcquireResult acquireResult = direct.nextImageIndex(swapchain);
+
+		frame.presentable = acquireResult.success;
+
+		if (!frame.presentable) return;
+
+		if (acquireResult.imageIndex.has_value())
+		{
+			frame.imageIndex = acquireResult.imageIndex.value();
+		}
+
+		encoder = std::make_unique<CommandEncoder>(direct, KernelInternal::tracker(kernel));
+
+		uint32_t frameSlot = direct.frameSlot();
+
+		ResidencyInternal::releaseRetired(residencyManager, frameSlot);
+		ResidencyInternal::resetStaging(residencyManager, frameSlot);
+		upload = ResidencyInternal::collectUploads(residencyManager, frameSlot);
+
+		auto& colorImage = targets.swapImage(*frame.imageIndex);
+
+		encoder->setDrawable(colorImage);
+		
+		frame.slot = frameSlot;
+		frame.viewData = nullptr;
+		frame.viewData = &view;
+
+		drawPerFrame = 0;
+	}
+
+	void Renderer::Impl::draw(const core::Scene& scene)
+	{
+		if (!encoder) return;
+		if (!frame.imageIndex.has_value() || !frame.presentable) return;
+
+		if (drawPerFrame > 0) throw std::runtime_error("draw() can only be called once per frame — global buffers hold one scene");
+
+		frame.slot = direct.frameSlot();
+		frame.scene = &scene;
+		
+		drawPerFrame++;
+
+		sceneResidency.updateResidency(residencyManager, scene, kernel.assets());
+		
+		//printf("================\n");
+
+		encodeUpload();
+		encodeCopy();
+		encodeBones();      
+		encodeShadow();   
+		encodeMainPass();
+	}
+
 	void Renderer::Impl::end()
 	{
-		if (frameState.imageIndex.has_value() && frameState.presentable && encoder)
+		if (frame.imageIndex.has_value() && frame.presentable && encoder)
 		{
 			encoder->commit();
-		
-			frameState.presentable = mainQueue.end(kernel.context().swapchain(), *frameState.imageIndex);
+
+			frame.presentable = direct.end(KernelInternal::context(kernel).swapchain(), *frame.imageIndex);
 			encoder.reset();
-			frameState.imageIndex = std::nullopt;
+			frame.imageIndex = std::nullopt;
+
 			drawPerFrame = 0;
 		}
 
+		frame.viewData = nullptr;
 	}
 
-	void Renderer::Impl::close() noexcept
-	{
-		kernel.context().activeDevice().wait();
-		kernel.window().stop();
-	}
 	
 #pragma endregion
-
 
 	Renderer::~Renderer() = default;
 
@@ -1105,24 +1247,13 @@ namespace tungol::runtime
 	{
 	}
 
-
-	void Renderer::begin() 
+	void Renderer::render(const core::ViewData& view, const core::Scene& scene)
 	{
-		m_impl->begin();
+		if (m_impl) 
+		{
+			m_impl->begin(view);
+			m_impl->draw(scene);
+			m_impl->end();
+		}
 	}
-
-
-	void Renderer::draw(const RenderScene& renderScene, const core::ViewData& view)
-	{
-		m_impl->draw(renderScene, view);
-	}
-
-
-	void Renderer::end()
-	{
-		m_impl->end();
-	}
-	
-	
-
 }

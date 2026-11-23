@@ -7,38 +7,60 @@
 layout(local_size_x = 64) in;
 
 layout(std430, set = 0, binding = 0) readonly buffer BoneMetaBuf { BoneMeta metas[]; };
+layout(std430, set = 0, binding = 1) readonly buffer PlaybackBuf { PlaybackState pbs[]; };
 layout(std430, set = 0, binding = 6) readonly buffer LocalsBuf { mat4 locals[]; };
 layout(std430, set = 0, binding = 7) writeonly buffer PaletteBuf { mat4 palette[]; };
 layout(std430, set = 0, binding = 8) readonly buffer InverseBindBuf { mat4 inverseBinds[]; }; 
 
-layout(push_constant) uniform Push { uint totalBoneCount; uint instanceCount; } pc;
+layout(push_constant) uniform SkinningParams { uint totalThreads; uint playbackCount; } pc;
 
-const uint MAX_DEPTH = 128U; 
+const uint MAX_DEPTH = 256U; 
 
 void main()
 {
-    uint boneId = gl_GlobalInvocationID.x;
-    if (boneId >= pc.totalBoneCount) return;
+    uint threadId = gl_GlobalInvocationID.x;
+    if (threadId >= pc.totalThreads) return;
 
-    BoneMeta meta = metas[boneId];
-
-    if (meta.instanceIndex >= pc.instanceCount) 
+    int instId = -1;
+    uint localBone = 0;
+    for (uint i = 0; i < pc.playbackCount; ++i) 
     {
-        palette[boneId] = locals[boneId];  
+        if (threadId >= pbs[i].boneOffset && threadId < pbs[i].boneOffset + pbs[i].boneCount) 
+        {
+            instId = int(i);
+            localBone = threadId - pbs[i].boneOffset;
+            break;
+        }
+    }
+
+    if (instId < 0) 
+    {
+        palette[threadId] = mat4(1.0);
         return;
     }
 
-    mat4 world = locals[boneId];
-    
+    PlaybackState p = pbs[instId];
+    uint metaId = p.boneMetaOffset + localBone;
+    BoneMeta meta = metas[metaId];
+
+    mat4 world = locals[threadId];
     uint parent = meta.parentIndex;
     uint depth = 0;
 
-    while (parent != UINT32_MAX && parent < pc.totalBoneCount && depth < MAX_DEPTH)
+    while (parent != UINT32_MAX && depth < MAX_DEPTH)
     {
-        world = locals[parent] * world;
+        if (parent < p.boneMetaOffset || parent >= p.boneMetaOffset + p.boneCount) 
+        {
+            break;
+        }
+
+        uint parentLocalBone = parent - p.boneMetaOffset;
+        uint parentPaletteIdx = p.boneOffset + parentLocalBone;
+        
+        world = locals[parentPaletteIdx] * world; 
         parent = metas[parent].parentIndex;
         depth++;
     }
 
-    palette[boneId] = world * inverseBinds[boneId];
+    palette[threadId] = world * inverseBinds[meta.inverseBindIndex];
 }

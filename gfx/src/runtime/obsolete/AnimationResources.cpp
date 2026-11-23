@@ -319,14 +319,9 @@ namespace tungol::runtime
 		{
 			const auto& inst = scene.instances()[i];
 			const auto& model = models.model(inst.modelID);
-			const auto& boneOffset = boneOffsets[i];
+			const uint32_t boneOffset = (i < boneOffsets.size()) ? boneOffsets[i] : UINT32_MAX;
+			const uint32_t clipIndex = (i < resolvedClipIndices.size()) ? resolvedClipIndices[i] : UINT32_MAX;
 
-			if (resolvedClipNames[i] != inst.clipName)
-			{
-				resolvedClipIndices[i] = resolveClip(inst.modelID, inst.clipName, models);
-				resolvedClipNames[i] = inst.clipName;
-			}
-			
 			PlaybackState pb{};
 			pb.time = inst.time;
 			pb.clipIndex = resolvedClipIndices[i];
@@ -435,16 +430,41 @@ namespace tungol::runtime
 		return *m_impl->bonePaletteSBs[slot]; 
 	}
 
+	void AnimationResources::resolveClips(const core::Scene& scene, const core::ModelRegistry& models)
+	{
+		for (uint32_t i = 0; i < scene.instances().size(); ++i)
+		{
+			const auto& inst = scene.instances()[i];
+			const auto n = scene.instances().size();
+
+			if (m_impl->resolvedClipNames.size() < n) m_impl->resolvedClipNames.resize(n);
+			if (m_impl->resolvedClipIndices.size() < n) m_impl->resolvedClipIndices.resize(n, UINT32_MAX);
+
+			if (m_impl->resolvedClipNames[i] != inst.clipName)
+			{
+				m_impl->resolvedClipIndices[i] = m_impl->resolveClip(inst.modelID, inst.clipName, models);
+				m_impl->resolvedClipNames[i] = inst.clipName;
+			}
+		}
+	}
+
 	const uint32_t AnimationResources::boneCount() const
 	{
 		return m_impl->boneCount;
 	}
 
-	const uint32_t AnimationResources::boneOffset(uint32_t instanceIndex)
+	const uint32_t AnimationResources::boneOffset(uint32_t idx) const
 	{
-		if (instanceIndex >= m_impl->boneOffsets.size()) 
-			throw std::out_of_range("[AnimationResources::boneOffset] instanceIndex out of range ("+ std::to_string(instanceIndex) + " >= "+ std::to_string(m_impl->boneOffsets.size()) + ")");
-		return m_impl->boneOffsets[instanceIndex];
+		if (idx >= m_impl->boneOffsets.size())
+			return UINT32_MAX;
+		return m_impl->boneOffsets[idx];
+	}
+
+	const uint32_t AnimationResources::clipIndex(uint32_t idx) const
+	{
+		if (idx >= m_impl->resolvedClipIndices.size())
+			return UINT32_MAX;
+		return m_impl->resolvedClipIndices[idx];
 	}
 	
 	const vhl::DescriptorSetHandle& AnimationResources::sampleSets(uint32_t slot) const 

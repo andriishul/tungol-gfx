@@ -11,9 +11,8 @@ layout(location = 3) in vec4 aTangent;
 
 void main()
 {
-    InstanceData instance = instances[gl_InstanceIndex];
+    Instance instance = instances[gl_InstanceIndex];
 
-    vec4 world = instance.model * vec4(aPos, 1.0);
-
-    gl_Position = frame.shadow.viewProj * world;
+    gl_Position = viewData.shadow.viewProj * instance.worldTransform * vec4(aPos, 1.0);
+    
 }

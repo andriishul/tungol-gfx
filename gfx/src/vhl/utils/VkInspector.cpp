@@ -1,5 +1,6 @@
 #include "VkInspector.hpp"
 
+#include <vhl/core/Allocator.hpp>
 #include <algorithm>
 
 namespace tungol::vhl
@@ -173,10 +174,10 @@ namespace tungol::vhl
 
 		std::vector<std::string> extensionNames(count);
 		std::transform(extProperties.cbegin(), extProperties.cend(), extensionNames.begin(), 
-			[](const VkExtensionProperties& prop)
-			{
-				return prop.extensionName;
-			});
+		[](const VkExtensionProperties& prop)
+		{
+			return prop.extensionName;
+		});
 
 		return extensionNames;
 	}
@@ -195,10 +196,10 @@ namespace tungol::vhl
 		
 		std::vector<std::string> extensionNames(count);
 		std::transform(properties.cbegin(), properties.cend(), extensionNames.begin(), 
-			[](const VkLayerProperties& layer)
-			{
-				return std::string(layer.layerName);
-			});
+		[](const VkLayerProperties& layer)
+		{
+			return std::string(layer.layerName);
+		});
 
 		return extensionNames;
 	}
@@ -283,75 +284,49 @@ namespace tungol::vhl
 	}
 
 
-	VkPhysicalDeviceMemoryProperties Enumerator::MemoryFilter::get_physical_device_properties(const VkPhysicalDevice& physical)
-	{
-		VkPhysicalDeviceMemoryProperties prop;
-		vkGetPhysicalDeviceMemoryProperties(physical, &prop);
-		return prop;
-	}
-
 	MemoryRequirements Enumerator::MemoryFilter::get_image_requirements(
-		const VkDevice& logical, const VkPhysicalDevice& physical, const VkImage& image, MemoryType required)
+		const VkDevice& logical, const MemoryTopology& topo, const VkImage& image, MemoryType required)
 	{
-		
-		const VkPhysicalDeviceMemoryProperties prop = get_physical_device_properties(physical);
-		
-		VkMemoryDedicatedRequirements dedicatedMemoryRequirements { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS };
-		
+						
 		VkMemoryRequirements memoryRequirements;
 
 		vkGetImageMemoryRequirements(logical, image, &memoryRequirements);
 
-		const auto requiredPropertyFlags = utils::toVkMemoryPropertyFlags(required);
+		uint32_t typeIndex = topo.pickTypeIndex(required, memoryRequirements.memoryTypeBits);
 
-		for (uint32_t i = 0; i < prop.memoryTypeCount; ++i)
+		if (typeIndex != UINT32_MAX) 
 		{
-			if (!(memoryRequirements.memoryTypeBits & (1 << i))) continue;
-
-			const auto& propertyFlags = prop.memoryTypes[i].propertyFlags;
-
-			if ((propertyFlags & requiredPropertyFlags) == requiredPropertyFlags)
+			return MemoryRequirements
 			{
-				return MemoryRequirements
-				{
-					.alignment = memoryRequirements.alignment,
-					.size = memoryRequirements.size,
-					.memoryType = required,
-					.memoryTypeIndex = i
-				};
-			}
+				.alignment = memoryRequirements.alignment,
+				.size = memoryRequirements.size,
+				.memoryType = required,
+				.memoryTypeIndex = typeIndex
+			};
 		}
+
 
 		throw std::runtime_error("[Enumerator::MemoryFilter::get_image_requirements] Memory type not found or not supported!");
 	}
 
 	MemoryRequirements Enumerator::MemoryFilter::get_buffer_requirements(
-		const VkDevice& logical, const VkPhysicalDevice& physical, const VkBuffer& buffer, MemoryType required)
+		const VkDevice& logical, const MemoryTopology& topo, const VkBuffer& buffer, MemoryType required)
 	{
-		const VkPhysicalDeviceMemoryProperties prop = get_physical_device_properties(physical);
-
 		VkMemoryRequirements memoryRequirements;
 
 		vkGetBufferMemoryRequirements(logical, buffer, &memoryRequirements);
 
-		const auto requiredPropertyFlags = utils::toVkMemoryPropertyFlags(required);
+		uint32_t typeIndex = topo.pickTypeIndex(required, memoryRequirements.memoryTypeBits);
 
-		for (uint32_t i = 0; i < prop.memoryTypeCount; ++i)
+		if (typeIndex != UINT32_MAX)
 		{
-			if (!(memoryRequirements.memoryTypeBits & (1 << i))) continue;
-
-			const auto& propertyFlags = prop.memoryTypes[i].propertyFlags;
-
-			if ((propertyFlags & requiredPropertyFlags) == requiredPropertyFlags)
+			return MemoryRequirements
 			{
-				return MemoryRequirements
-				{
-					.alignment = memoryRequirements.alignment,
-					.size = memoryRequirements.size,
-					.memoryType = required,
-					.memoryTypeIndex = i				
-				};
-			}
+				.alignment = memoryRequirements.alignment,
+				.size = memoryRequirements.size,
+				.memoryType = required,
+				.memoryTypeIndex = typeIndex
+			};
 		}
 
 		throw std::runtime_error("[Enumerator::MemoryFilter::get_buffer_requirements] Memory type not found or not supported!");

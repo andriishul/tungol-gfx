@@ -4,7 +4,7 @@
 #include "constants.glsl"
 #include "materials.glsl"
 
-layout(set = 2, binding = 0) uniform sampler2D samplers[];
+layout(set = 2, binding = 1) uniform sampler2D samplers[];
 
 #ifndef SHADOW_SET
 #define SHADOW_SET 4

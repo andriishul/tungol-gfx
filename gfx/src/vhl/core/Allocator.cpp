@@ -1,15 +1,14 @@
 #include "Allocator.hpp"
 
+#include <algorithm>
 #include <vhl/utils/VkInspector.hpp>
 
 namespace tungol::vhl 
 {
-    constexpr uint64_t DEFAULT_SLAB_ALIGNMENT = 64 * 1024; // 64 KB
+    constexpr uint32_t MAX_DEFAULT_VK_ALLOCATION_COUNT = 4096U;
 
-    constexpr uint32_t MAX_DEFAULT_VK_ALLOCATION_COUNT = 4096;
-
-    constexpr uint32_t MIN_BLOCK_SIZE = 16; // Chosen because most graphics APIs prefer 16-byte alignment as a default, especially for uniform and storage buffers.
-    constexpr uint32_t NUM_CLASSES = 32;
+    constexpr uint32_t MIN_BLOCK_SIZE = 16U; // Chosen because most graphics APIs prefer 16-byte alignment as a default, especially for uniform and storage buffers.
+    constexpr uint32_t NUM_CLASSES = 32U;
 
 
     static uint64_t alignUp(uint64_t offset, uint64_t alignment)
@@ -110,12 +109,13 @@ namespace tungol::vhl
         uint64_t bufferSlabSize = 0; 
         uint64_t imageSlabSize = 0;
 
-        VkDevice logical = nullptr;
+        VkDevice logical = VK_NULL_HANDLE;
 
         std::vector<InternalSlab> bufferPool;
         std::vector<InternalSlab> imagePool;
         std::unordered_map<uint64_t, BlockLocation> bufferHandleIndex;
         std::unordered_map<uint64_t, BlockLocation> imageHandleIndex;
+        std::unique_ptr<MemoryTopology> topology;
 
         uint32_t totalAllocationCounter = 0;
         
@@ -257,18 +257,16 @@ namespace tungol::vhl
 
     static Block* findFreeBlock(InternalSlab& slab, uint64_t size, uint64_t alignment)
     {
-        size += (alignment - 1);
         uint32_t classIndex = getClassIndex(size);
         
         for (uint32_t i = classIndex; i < NUM_CLASSES; ++i)
         {
             for (Block* freeBlock = slab.blockList[i]; freeBlock; freeBlock = freeBlock->next_free)
             {
-                if (freeBlock->size >= size)
+                if (alignUp(freeBlock->offset, alignment) + size <= freeBlock->offset + freeBlock->size) 
                     return freeBlock;
             }
         }
-
         return nullptr;
     }
 
@@ -423,7 +421,7 @@ namespace tungol::vhl
         };
 
         VK_CHECK(vkAllocateMemory(logical, &allocInfo, nullptr, &slab.memory));
-
+        
         if (memoryType == MemoryType::CpuToGpu || memoryType == MemoryType::GpuToCpu)
         {
             try
@@ -586,6 +584,7 @@ namespace tungol::vhl
             m_impl->logical = reinterpret_cast<VkDevice>(handle_value);
         else throw std::runtime_error("[SegregatedAllocator::SegregatedAllocator] Null device handle");
 
+        m_impl->topology = std::make_unique<MemoryTopology>(device);
         m_impl->maxMemoryAllocationCount = device.limits().memory.maxMemoryAllocationCount;
     }
 
@@ -597,16 +596,22 @@ namespace tungol::vhl
 
     const MemoryBlock SegregatedAllocator::allocate(BufferHandle handle, MemoryType memoryType, uint32_t memoryTypeIndex, uint64_t size, uint64_t alignment)
     {
-        uint64_t preferedSlabSize = std::max(m_impl->bufferSlabSize, size + alignment - 1);
-        preferedSlabSize = alignUp(preferedSlabSize, DEFAULT_SLAB_ALIGNMENT);
+        const uint64_t heapSize = m_impl->topology->heapSize(memoryTypeIndex);
+        if (size > heapSize)
+            throw std::runtime_error("[SegregatedAllocator::allocate(BufferHandle)] need " + std::to_string(size >> 20) + " MB, heap is " + std::to_string(heapSize >> 20) + " MB");
+
+        uint64_t preferedSlabSize = std::max(std::min(m_impl->bufferSlabSize, heapSize / 4), size + alignment - 1);
 
         return Impl::allocateFromPool(m_impl->bufferPool, m_impl->bufferHandleIndex, handle.value, preferedSlabSize, memoryType, memoryTypeIndex, size, alignment, m_impl->logical, m_impl->totalAllocationCounter, m_impl->maxMemoryAllocationCount);
     }
 
     const MemoryBlock SegregatedAllocator::allocate(ImageHandle handle, MemoryType memoryType, uint32_t memoryTypeIndex, uint64_t size, uint64_t alignment)
     {
-        uint64_t preferedSlabSize = std::max(m_impl->imageSlabSize, size + alignment - 1);
-        preferedSlabSize = alignUp(preferedSlabSize, DEFAULT_SLAB_ALIGNMENT);
+        const uint64_t heapSize = m_impl->topology->heapSize(memoryTypeIndex);
+        if (size > heapSize)
+            throw std::runtime_error("[SegregatedAllocator::allocate(ImageHandle)] need " + std::to_string(size >> 20) + " MB, heap is " + std::to_string(heapSize >> 20) + " MB");
+
+        uint64_t preferedSlabSize = std::max(std::min(m_impl->imageSlabSize, heapSize / 4), size + alignment - 1);
 
         return Impl::allocateFromPool(m_impl->imagePool, m_impl->imageHandleIndex, handle.value, preferedSlabSize, memoryType, memoryTypeIndex, size, alignment, m_impl->logical, m_impl->totalAllocationCounter, m_impl->maxMemoryAllocationCount);
     }
@@ -628,6 +633,11 @@ namespace tungol::vhl
         shrinkPool(m_impl->logical, m_impl->imagePool, m_impl->imageHandleIndex, m_impl->totalAllocationCounter, 1);
     }
 
+    const MemoryTopology& SegregatedAllocator::topology() const
+    {
+        return *m_impl->topology;
+    }
+
     std::unique_ptr<SegregatedAllocator> SegregatedAllocator::create(const Device& device, uint64_t bufferSlabSize, uint64_t imageSlabSize)
     {
         auto ptr = std::unique_ptr<SegregatedAllocator>(new SegregatedAllocator(device, bufferSlabSize, imageSlabSize));
@@ -645,17 +655,13 @@ namespace tungol::vhl
     {
         BufferResource create(const Device& device, SegregatedAllocator& allocator, const BufferDesc& desc)
         {
-            VkBuffer buffer = 0;
-            VkDevice logical = nullptr;
-            VkPhysicalDevice physical = nullptr;
+            VkBuffer buffer = VK_NULL_HANDLE;
+            VkDevice logical = VK_NULL_HANDLE;
 
             if (uint64_t handle_value = device.handle().value; handle_value != 0)
                 logical = reinterpret_cast<VkDevice>(handle_value);
             else throw std::runtime_error("[create() Buffer] Null device handle.");
-            if (uint64_t handle_value = device.adapterHandle().value; handle_value != 0)
-                physical = reinterpret_cast<VkPhysicalDevice>(handle_value);
-            else throw std::runtime_error("[create() Buffer()] Null adapter handle.");
-
+          
             
             VkBufferCreateInfo bufferInfo
             {
@@ -671,7 +677,7 @@ namespace tungol::vhl
             
             try
             {
-                auto reqs = Enumerator::MemoryFilter::get_buffer_requirements(logical, physical, buffer, desc.memoryType);
+                auto reqs = Enumerator::MemoryFilter::get_buffer_requirements(logical, allocator.topology(), buffer, desc.memoryType);
 
                 resource.handle.value = reinterpret_cast<uint64_t>(buffer);
 
@@ -697,6 +703,11 @@ namespace tungol::vhl
                     buffer = 0;
                 }
 
+                if (resource.handle.value != 0)
+                {
+                    allocator.free(resource.handle);
+                }
+
                 throw;
             }
 
@@ -704,8 +715,8 @@ namespace tungol::vhl
         }
         void destroy(const Device& device, SegregatedAllocator& allocator, const BufferResource& resource)
         {
-            VkBuffer buffer = 0;
-            VkDevice logical = nullptr;
+            VkBuffer buffer = VK_NULL_HANDLE;
+            VkDevice logical = VK_NULL_HANDLE;
 
             if (uint64_t handle_value = device.handle().value; handle_value != 0)
                 logical = reinterpret_cast<VkDevice>(handle_value);
@@ -724,18 +735,14 @@ namespace tungol::vhl
     {
         ImageResource create(const Device& device, SegregatedAllocator& allocator, const ImageDesc& desc)
         {
-            VkImage image = 0;
-            VkDevice logical = nullptr;
-            VkPhysicalDevice physical = nullptr;
+            VkImage image = VK_NULL_HANDLE;
+            VkDevice logical = VK_NULL_HANDLE;
 
             if (uint64_t handle_value = device.handle().value; handle_value != 0)
                 logical = reinterpret_cast<VkDevice>(handle_value);
             else throw std::runtime_error("[create() Image] Null device handle.");
 
-            if (uint64_t handle_value = device.adapterHandle().value; handle_value != 0)
-                physical = reinterpret_cast<VkPhysicalDevice>(handle_value);
-            else throw std::runtime_error("[create() Image] Null adapter handle.");
-
+         
             VkExtent3D extent
             {
                 .width = desc.width,
@@ -764,7 +771,7 @@ namespace tungol::vhl
             ImageResource resource{};
             try
             {
-                auto reqs = Enumerator::MemoryFilter::get_image_requirements(logical, physical, image, desc.memoryType);
+                auto reqs = Enumerator::MemoryFilter::get_image_requirements(logical, allocator.topology(), image, desc.memoryType);
 
                 resource.handle.value = reinterpret_cast<uint64_t>(image);
 
@@ -790,6 +797,11 @@ namespace tungol::vhl
                     image = 0;
                 }
 
+                if (resource.handle.value != 0)
+                {
+                    allocator.free(resource.handle);
+                }
+
                 throw;
             }
 
@@ -798,8 +810,8 @@ namespace tungol::vhl
         }
         void destroy(const Device& device, SegregatedAllocator& allocator, const ImageResource& resource)
         {
-            VkImage image = 0;
-            VkDevice logical = nullptr;
+            VkImage image = VK_NULL_HANDLE;
+            VkDevice logical = VK_NULL_HANDLE;
 
             if (uint64_t handle_value = device.handle().value; handle_value != 0)
                 logical = reinterpret_cast<VkDevice>(handle_value);
@@ -814,4 +826,91 @@ namespace tungol::vhl
             allocator.free(resource.handle);
         }
     }
+  
+    struct MemoryTopology::Impl 
+    {
+        Impl(const Device& device);
+
+        std::vector<MemoryHeapInfo> heaps;
+        std::vector<MemoryTypeInfo> memTypes;
+        std::array<std::vector<uint32_t>, 3> candidates;
+    };
+
+    static size_t slot(MemoryType type)
+    {
+        switch (type)
+        {
+            case MemoryType::GpuOnly: return 0;
+            case MemoryType::CpuToGpu: return 1;
+            default: return 2;
+        }
+    }
+
+    MemoryTopology::Impl::Impl(const Device& device)
+    {
+        if (device.adapterHandle().value == 0) throw std::runtime_error("[MemoryTopology] Null adapter handle.");
+
+        VkPhysicalDevice physical = reinterpret_cast<VkPhysicalDevice>(device.adapterHandle().value);
+
+        VkPhysicalDeviceMemoryProperties props{};
+        vkGetPhysicalDeviceMemoryProperties(physical, &props);
+
+
+        for (uint32_t i = 0; i < props.memoryHeapCount; ++i)
+        {
+            heaps.push_back({ props.memoryHeaps[i].size, (props.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0 });
+        }
+
+        for (uint32_t i = 0; i < props.memoryTypeCount; ++i)
+        {
+            memTypes.push_back({ props.memoryTypes[i].heapIndex, props.memoryTypes[i].propertyFlags });
+        }
+
+        const MemoryType types[] = { MemoryType::GpuOnly, MemoryType::CpuToGpu, MemoryType::GpuToCpu };
+
+        for (const MemoryType& type : types)
+        {
+            const VkMemoryPropertyFlags want = utils::toVkMemoryPropertyFlags(type);
+
+            auto& list = candidates[slot(type)];
+
+            for (uint32_t i = 0; i < memTypes.size(); ++i) 
+            {
+                if ((memTypes[i].flags & want) == want) 
+                    list.push_back(i);
+            }
+        }
+    }
+
+    MemoryTopology::~MemoryTopology() = default;
+
+    MemoryTopology::MemoryTopology(const Device& device) : m_impl(new Impl(device))
+    {
+        
+    }
+
+    uint32_t MemoryTopology::pickTypeIndex(MemoryType type, uint32_t typeBits) const
+    {
+        for (uint32_t i : m_impl->candidates[slot(type)])
+        {
+            if (typeBits & (1U << i)) return i;
+        }
+
+        return UINT32_MAX;
+    }
+
+    uint64_t MemoryTopology::heapSize(uint32_t typeIndex) const
+    {
+        return m_impl->heaps[m_impl->memTypes.at(typeIndex).heapIndex].size;
+    }
+
+    uint64_t MemoryTopology::heapSize(MemoryType type) const
+    {
+        const auto& list = m_impl->candidates[slot(type)];
+        return list.empty() ? 0 : heapSize(list.front());
+    }
+
+
+    const std::vector<MemoryHeapInfo>& MemoryTopology::heaps() const { return m_impl->heaps; }
+    const std::vector<MemoryTypeInfo>& MemoryTopology::types() const { return m_impl->memTypes; }
 }

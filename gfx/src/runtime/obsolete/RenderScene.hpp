@@ -5,6 +5,10 @@
 
 #include <core/ViewData.hpp>
 
+
+#include "data/FrameDrawData.hpp"
+
+
 namespace tungol::runtime
 {
 	class TUNGOL_EXPORT RenderScene 
@@ -26,9 +30,10 @@ namespace tungol::runtime
 		vhl::Buffer& staticVB() const;
 		vhl::Buffer& skinnedVB() const;
 		vhl::Buffer& indexBuf() const;
-		vhl::Buffer& indirectBuf() const;
-
 		vhl::Buffer& materialSB() const;
+
+		vhl::Buffer& indirectTBs(uint32_t slot) const;
+		vhl::Buffer& indirectBufs(uint32_t slot) const;
 		vhl::Buffer& instanceSBs(uint32_t slot) const;
 		vhl::Buffer& instanceTBs(uint32_t slot) const;
 
@@ -37,7 +42,10 @@ namespace tungol::runtime
 		uint8_t* build(const core::Scene& scene) const;
 		uint8_t* buildPlayback(const core::Scene& scene) const;
 
-		const AnimationResources& animations() const;
+		const std::vector<ModelBase>& modelBases() const;
+
+
+		AnimationResources& animations();
 		const ShadowResources& shadows() const;
 
 		math::vec3 sceneMin() const;

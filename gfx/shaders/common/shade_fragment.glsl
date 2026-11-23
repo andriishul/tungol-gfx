@@ -36,7 +36,22 @@ float shadowFactor(ShadowData shadow, vec3 worldPos, vec3 N, vec3 L)
 
 vec4 shade_fragment(vec3 N_geom, vec2 uv, vec3 worldPos, vec3 T, vec3 B, uint matIdx, LightData light, ShadowData shadow, vec3 camPos)
 {
-    MaterialData mat = materials[matIdx == UINT32_MAX ? 0 : matIdx];
+    MaterialData mat;
+    if (matIdx == UINT32_MAX)
+    {
+        mat.baseColor   = vec4(1.0);
+        mat.metallic    = 0.0;
+        mat.roughness   = 1.0;
+        mat.albedoIdx   = UINT32_MAX;
+        mat.normalIdx   = UINT32_MAX;
+        mat.mrIdx       = UINT32_MAX;
+        mat.emissiveIdx = UINT32_MAX;
+    }
+    else
+    {
+        mat = materials[matIdx];
+    }
+
     vec4 albedo = albedo_texture(mat, uv) * mat.baseColor;
 
     mat3 TBN = mat3(normalize(T), normalize(B), normalize(N_geom));    

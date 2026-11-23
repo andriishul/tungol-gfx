@@ -374,6 +374,9 @@ namespace tungol::vhl
 					.srcQueueFamily = QueueFamilyIgnored,
 					.dstQueueFamily = QueueFamilyIgnored
 				};
+
+				//printf("===buf===\n");
+
 				BarrierCommand::buffer(dstCmd, desc);
 			}
 		}
@@ -460,6 +463,8 @@ namespace tungol::vhl
 					.baseLayer = op.baseLayer,
 					.layerCount = op.layerCount
 				};
+
+				//printf("===img===\n");
 				BarrierCommand::image(dstCmd, desc);
 			}
 

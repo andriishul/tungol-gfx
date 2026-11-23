@@ -1,6 +1,5 @@
 #pragma once
 #include "RenderKernel.hpp"
-#include "RenderScene.hpp"
 
 #include <core/ViewData.hpp>
 
@@ -12,9 +11,7 @@ namespace tungol::runtime
 		Renderer(RenderKernel& kernel);
 		~Renderer();
 
-		void begin();
-		void draw(const RenderScene& renderScene, const core::ViewData& view); 
-		void end();
+		void render(const core::ViewData& view, const core::Scene& scene);
 	private:
 		struct Impl;
 		std::unique_ptr<Impl> m_impl;

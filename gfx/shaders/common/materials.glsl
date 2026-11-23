@@ -12,7 +12,7 @@ struct MaterialData
     uint emissiveIdx;
 };
 
-layout(std430, set = 1, binding = 1) readonly buffer Materials { MaterialData materials[]; };
+layout(std430, set = 2, binding = 0) readonly buffer Materials { MaterialData materials[]; };
 
 #endif
 

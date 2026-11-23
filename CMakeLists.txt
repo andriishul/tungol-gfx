@@ -32,18 +32,35 @@ set(GLFW_WRAPPERS_SRCS
 
 set(CORE_SRCS
     gfx/src/core/PathResolver.cpp
+    gfx/src/core/AssetCache.cpp
 )
+
+#                   OBSOLETE
+#       gfx/src/runtime/RenderScene.cpp
+#       gfx/src/runtime/AnimationResources.cpp
+#       gfx/src/runtime/ShadowResources.cpp
 
 set(RUNTIME_SRCS
     
-    gfx/src/runtime/GeometryPool.cpp
-    
-    gfx/src/runtime/AnimationResources.cpp
-    gfx/src/runtime/ShadowResources.cpp
+    gfx/src/runtime/data/AnimationData.cpp
+    gfx/src/runtime/data/FrameDrawData.cpp
+
+    gfx/src/runtime/ResidencyManager.cpp
+    gfx/src/runtime/SceneResidency.cpp
+    gfx/src/runtime/PoolBudget.cpp
+
+    gfx/src/runtime/heaps/DrawHeap.cpp
+    gfx/src/runtime/heaps/GeometryHeap.cpp
+    gfx/src/runtime/heaps/AnimationHeap.cpp
+    gfx/src/runtime/heaps/MaterialHeap.cpp
+
+    gfx/src/runtime/heaps/Pool.cpp
+
     gfx/src/runtime/RenderKernel.cpp
-    gfx/src/runtime/RenderScene.cpp
+    
     gfx/src/runtime/Renderer.cpp
     gfx/src/runtime/Texture.cpp
+    gfx/src/runtime/ShadowMap.cpp
 )
 
 set(BUFFERS_SRCS

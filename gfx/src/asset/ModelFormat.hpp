@@ -129,7 +129,12 @@ namespace tungol::asset
         uint32_t keyIndex = 0;
     };
 
-    
+    struct AABB
+    {
+        math::vec3 min{ +1e30f, +1e30f, +1e30f };
+        math::vec3 max{ -1e30f, -1e30f, -1e30f };
+    };
+
     struct Model
     {
         std::vector<MeshEntry> meshes;
@@ -145,6 +150,8 @@ namespace tungol::asset
         std::vector<AnimationChannel> channels;
         std::vector<AnimationHeader> animations;
         std::vector<AnimationKey> frames;
+
+        AABB localAABB;
     };
 
     struct ModelEntry
