@@ -22,7 +22,7 @@ Each image tracks state per (mip, layer). Transitions can target any range. merg
 
 ## Pass usage merging
 
-Two `useImage` calls with the same image and same range in one pass are merged into one entry with OR'd intents. `useBuffer` merges per buffer the same way.
+Two `useImage` calls with the same image and same range in one pass are merged into one entry with OR'd intents. `useBuffer` merges per buffer the same way, but in ranges instead.
 
 ## Allocator
 
@@ -81,9 +81,9 @@ externally synchronize access(mutexes, etc).
 
 **Bindless Textures**
 
-Textures are accessed globally bindless descriptor array, indexed per-material from the shader. No per-draw descriptor rebinding.
+Textures are accessed globally using bindless descriptor array, indexed per-material from the shader. No per-draw descriptor rebinding.
 
-Capacity is k_MaxTextures per scene (currently 4096), validated at startup against the device's per-stage sampled-image limit. 
+Capacity is k_MaxTextures (currently 4096), validated at startup against the device's per-stage sampled-image limit. 
 
 The descriptor pool is sized for k_MaxTextures + 1 to cover all textures plus one shadow map.
 

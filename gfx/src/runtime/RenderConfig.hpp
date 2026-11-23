@@ -11,7 +11,7 @@ namespace tungol
         inline constexpr uint32_t k_ShadowMapResolution = 1408U;
 
         inline constexpr uint32_t k_MaxInstances = 2048U;
-        inline constexpr uint32_t k_MaxMeshesPerInstance = 32U;
+        inline constexpr uint32_t k_MaxMeshesPerInstance = 16U;
 
         inline constexpr uint32_t k_MaxSkinnedInstances = 256U;
         inline constexpr uint32_t k_MaxBonesPerInstance = 512U;
